@@ -39,6 +39,13 @@ class AppState:
         self.styled_preview_widget = None
         self.layer_preview_widget = None
         self.status = None
+        # Drag state for interactive crop preview
+        # When the user drags on the crop preview image, we store the mouse
+        # coordinates to compute delta offsets. These attributes are reset on
+        # initialization and toggled during drag events.
+        self.dragging: bool = False
+        self.last_mouse_x: float = 0.0
+        self.last_mouse_y: float = 0.0
 
 
 state = AppState()
@@ -72,6 +79,32 @@ def refresh_styled_preview() -> None:
         state.project.imported_fonts,
     )
     state.styled_preview_widget.set_source(image_to_data_url(composition.image))
+
+
+def handle_crop_mouse(e: events.MouseEventArguments) -> None:
+    """Handle mouse drag events on the crop preview to adjust pan offsets.
+
+    This callback listens for mousedown, mousemove and mouseup events on the
+    interactive image. On mousedown we mark the beginning of a drag and
+    remember the current mouse coordinates. While dragging (mousemove
+    with the primary button pressed) we compute the delta between the new
+    coordinates and the last ones, apply the deltas to the crop transform's
+    pan values, and refresh the preview. On mouseup we end the drag.
+    """
+    if e.type == 'mousedown':
+        state.dragging = True
+        state.last_mouse_x = e.image_x
+        state.last_mouse_y = e.image_y
+    elif e.type == 'mouseup':
+        state.dragging = False
+    elif e.type == 'mousemove' and state.dragging:
+        dx = e.image_x - state.last_mouse_x
+        dy = e.image_y - state.last_mouse_y
+        state.last_mouse_x = e.image_x
+        state.last_mouse_y = e.image_y
+        state.project.crop_transform.pan_x_px += dx
+        state.project.crop_transform.pan_y_px += dy
+        refresh_crop_preview()
 
 
 def handle_upload(e: events.UploadEventArguments) -> None:
@@ -153,7 +186,14 @@ def build_ui() -> None:
             ui.label("1. Upload and prepare image").classes("text-lg font-bold")
             ui.upload(on_upload=handle_upload, auto_upload=True, label="Upload token art").props("accept=image/*").classes("w-full")
 
-            state.crop_image_widget = ui.image().classes("w-full border rounded")
+            # Use interactive image for drag-based pan. The size is determined by the crop transform.
+            crop_size = (state.project.crop_transform.output_width_px, state.project.crop_transform.output_height_px)
+            state.crop_image_widget = ui.interactive_image(
+                size=crop_size,
+                on_mouse=handle_crop_mouse,
+                events=['mousedown','mouseup','mousemove'],
+                cross=False,
+            ).classes("w-full border rounded")
             with ui.row():
                 ui.button("Rotate 90°", on_click=lambda: (rotate_transform_90(state.project.crop_transform), refresh_crop_preview()))
                 ui.button("Reset", on_click=lambda: (setattr(state.project, "crop_transform", reset_transform(state.project.crop_transform)), refresh_crop_preview()))
@@ -237,8 +277,8 @@ def build_ui() -> None:
 
 
 def main() -> None:
-    build_ui()
-    ui.run(title="Tokenforge Local", reload=False, show=True)
+    # Pass the root function to NiceGUI to avoid script reloading errors
+    ui.run(title="Tokenforge Local", reload=False, show=True, root=build_ui)
 
 
 if __name__ in {"__main__", "__mp_main__"}:
