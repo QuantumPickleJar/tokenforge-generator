@@ -78,7 +78,7 @@ def _node_percent(layer_number: int, total_layers: int) -> float:
 
 
 def _render_vertical_slider(bands: list[LayerBand], total_layers: int) -> None:
-    height_px = max(260, min(520, total_layers * 34))
+    height_px = max(260, min(460, total_layers * 30))
     segment_html: list[str] = []
     node_html: list[str] = []
     for band in bands:
@@ -111,33 +111,37 @@ def _render_vertical_slider(bands: list[LayerBand], total_layers: int) -> None:
             {''.join(segment_html)}
             {''.join(node_html)}
           </div>
-          <div style="font-size:12px; line-height:1.45; color:#444; max-width:260px;">
+          <div style="font-size:12px; line-height:1.45; color:#444; max-width:280px;">
             <b>Manual color-change rail</b><br>
-            Bottom is layer 1. Each circular node is a layer shift point. Move a node to change where the next color starts;
-            the band height shows how many physical slicer layers that color spans.
+            Bottom is layer 1. Circular nodes are shift points. Band height shows how many slicer layers each color spans.
+            Use the compact editor below for exact layer numbers and color swaps.
           </div>
         </div>
         """
     )
 
 
+def _band_summary(band: LayerBand) -> str:
+    end = band.end_layer or band.layer_number
+    return f"{band.color_name}: L{band.layer_number}-{end} · {band.span_layers} layer{'s' if band.span_layers != 1 else ''}"
+
+
 def _render_band_controls(bands: list[LayerBand], total_layers: int) -> None:
     options = [color.name for color in enabled_colors(state.project.enabled_palette_colors)]
-    for index, band in enumerate(bands):
-        with ui.card().classes("w-full"):
-            with ui.row().classes("items-center justify-between w-full"):
-                ui.label(f"{band.color_name}: layers {band.layer_number}–{band.end_layer or band.layer_number}").classes("font-bold")
-                ui.label(f"{band.span_layers} layer{'s' if band.span_layers != 1 else ''} · {band.color_hex}").classes("text-xs text-gray-600")
-            with ui.row().classes("items-center w-full"):
-                ui.select(options, label="Color", value=band.color_name, on_change=lambda e, i=index: _change_stop_color(i, e.value)).classes("min-w-40")
+    with ui.expansion("Edit color shift points and spans", value=True).classes("w-full"):
+        ui.label("Change the color order, move the start layer for each node, or set a span to push the next node.").classes("text-xs text-gray-600")
+        for index, band in enumerate(bands):
+            with ui.row().classes("items-center no-wrap gap-2 w-full"):
+                ui.label(_band_summary(band)).classes("min-w-48 text-sm font-bold")
+                ui.select(options, label="Color", value=band.color_name, on_change=lambda e, i=index: _change_stop_color(i, e.value)).classes("w-36")
                 start_input = ui.number(
-                    "Start layer",
+                    "Start",
                     value=band.layer_number,
                     min=1,
                     max=total_layers,
                     step=1,
                     on_change=lambda e, i=index: _change_stop_start(i, e.value),
-                ).classes("w-28")
+                ).classes("w-24")
                 if index == 0:
                     start_input.props("disable")
                 span_input = ui.number(
@@ -152,7 +156,7 @@ def _render_band_controls(bands: list[LayerBand], total_layers: int) -> None:
                     span_input.props("disable")
                 ui.button("↑", on_click=lambda i=index: _nudge_stop(i, 1)).props("dense").tooltip("Move this shift point later/higher")
                 ui.button("↓", on_click=lambda i=index: _nudge_stop(i, -1)).props("dense").tooltip("Move this shift point earlier/lower")
-            ui.label(f"G-code checkpoint: {band.action}").classes("text-sm text-gray-700")
+            ui.label(f"G-code checkpoint: {band.action}").classes("text-xs text-gray-700")
 
 
 def refresh_layer_controls() -> None:
@@ -161,26 +165,27 @@ def refresh_layer_controls() -> None:
         return
     container.clear()
     with container:
-        ui.label("Layer color plan and G-code change points").classes("font-bold")
-        ui.label("This controls the actual color-to-Z mapping used for preview, STL height bands, swap CSV, and print notes.").classes("text-sm text-gray-600")
-        if len(enabled_colors(state.project.enabled_palette_colors)) < 2:
-            ui.label("Enable at least two filament colors to edit the layer color plan.").classes("text-sm text-orange-700")
-            return
+        with ui.card().classes("w-full gap-2"):
+            ui.label("Layer color plan and G-code change points").classes("font-bold")
+            ui.label("This controls the actual color-to-Z mapping used for preview, STL height bands, swap CSV, and print notes.").classes("text-sm text-gray-600")
+            if len(enabled_colors(state.project.enabled_palette_colors)) < 2:
+                ui.label("Enable at least two filament colors to edit the layer color plan.").classes("text-sm text-orange-700")
+                return
 
-        try:
-            plan, _colors = preview_layer_plan(state.project)
-        except Exception as exc:
-            ui.label(f"Layer plan unavailable: {exc}").classes("text-sm text-red-700")
-            return
+            try:
+                plan, _colors = preview_layer_plan(state.project)
+            except Exception as exc:
+                ui.label(f"Layer plan unavailable: {exc}").classes("text-sm text-red-700")
+                return
 
-        if plan.snap_warning:
-            ui.label(plan.snap_warning).classes("text-sm text-orange-700")
+            if plan.snap_warning:
+                ui.label(plan.snap_warning).classes("text-sm text-orange-700")
 
-        ui.label(f"Physical layer count: {plan.total_layers} · finished thickness: {plan.finished_thickness_mm:.3f} mm").classes("text-sm")
-        _render_vertical_slider(plan.color_layers, plan.total_layers)
-
-        with ui.row():
-            ui.button("Reset layer plan", on_click=reset_layer_controls)
-            ui.button("Refresh layer plan", on_click=refresh_layer_controls)
-
-        _render_band_controls(plan.color_layers, plan.total_layers)
+            ui.label(f"Physical layer count: {plan.total_layers} · finished thickness: {plan.finished_thickness_mm:.3f} mm").classes("text-sm")
+            with ui.row().classes("items-start gap-4 w-full"):
+                _render_vertical_slider(plan.color_layers, plan.total_layers)
+                with ui.column().classes("gap-2 grow"):
+                    _render_band_controls(plan.color_layers, plan.total_layers)
+                    with ui.row().classes("gap-2"):
+                        ui.button("Reset layer plan", on_click=reset_layer_controls).props("dense")
+                        ui.button("Refresh layer plan", on_click=refresh_layer_controls).props("dense")
