@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import tempfile
+import inspect
 import traceback
 
 from PIL import Image
@@ -106,23 +107,40 @@ def handle_crop_mouse(e: events.MouseEventArguments) -> None:
         state.project.crop_transform.pan_y_px += dy
         refresh_crop_preview()
 
-
 async def handle_upload(e: events.UploadEventArguments) -> None:
     upload_file = getattr(e, "file", None)
-    raw_name = getattr(e, "name", None) or getattr(upload_file, "name", None) or "uploaded-image.png"
-    filename = Path(raw_name).name or "uploaded-image.png"
-    name = safe_project_name(Path(filename).stem) or "uploaded-image"
+
+    raw_name = (
+        getattr(e, "name", None)
+        or getattr(e, "filename", None)
+        or getattr(upload_file, "filename", None)
+        or getattr(upload_file, "name", None)
+        or "uploaded-image.png"
+    )
+
+    filename = Path(str(raw_name)).name or "uploaded-image.png"
+    project_name = safe_project_name(Path(filename).stem) or "uploaded-image"
     suffix = Path(filename).suffix.lower() or ".png"
+
     if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}:
         suffix = ".png"
 
     upload_dir = Path("outputs/uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
 
+    target = upload_dir / f"{project_name}{suffix}"
+    counter = 1
+    while target.exists():
+        target = upload_dir / f"{project_name}-{counter}{suffix}"
+        counter += 1
+
     if upload_file is not None and hasattr(upload_file, "save"):
-        await upload_file.save(target)
+        result = upload_file.save(target)
+        if inspect.isawaitable(result):
+            await result
     elif hasattr(e, "content"):
-        data = e.content.read()
+        content = e.content
+        data = content.read() if hasattr(content, "read") else content
         if inspect.isawaitable(data):
             data = await data
         with target.open("wb") as handle:
@@ -130,11 +148,20 @@ async def handle_upload(e: events.UploadEventArguments) -> None:
     else:
         set_status("Upload failed: unsupported NiceGUI upload payload.", negative=True)
         return
-    state.source_path = target
-    state.source_image = Image.open(target).convert("RGB")
-    state.project.project_name = name
+
+    try:
+        state.source_path = target
+        state.source_image = Image.open(target).convert("RGB")
+    except Exception as exc:
+        set_status(f"Upload failed: could not read image ({exc}).", negative=True)
+        return
+
+    state.project.project_name = project_name
     state.project.source_image = str(target)
     state.project.crop_transform = default_crop_transform(str(target), state.project.token_defaults)
+    state.prepared_image = None
+    state.package_paths = None
+
     refresh_crop_preview()
     set_status("Image uploaded. Adjust pan/zoom/rotation, then confirm the crop.")
 
