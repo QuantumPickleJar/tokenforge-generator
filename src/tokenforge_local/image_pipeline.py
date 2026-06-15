@@ -10,8 +10,9 @@ from PIL import Image
 from .composition import CompositionResult, build_styled_composition
 from .geometry import calculate_layer_plan, height_map_from_indices, height_map_to_mesh
 from .masks import clean_index_map_tiny_islands
-from .models import FilamentColor, PrinterPreferences, ProjectState, TokenDefaults
-from .palette import enabled_colors, map_image_to_palette, sort_colors_for_layering
+from .models import FilamentColor, ProjectState
+from .palette import map_image_to_palette
+from .tf_layer_plan import layer_colors_for_project
 from .utils import hex_to_rgb
 
 
@@ -40,7 +41,7 @@ def run_token_pipeline(
     max_mesh_width_px: int = 150,
     snap_thickness: str = "nearest",
 ) -> PipelineResult:
-    colors = sort_colors_for_layering(enabled_colors(project.enabled_palette_colors))
+    colors = layer_colors_for_project(project)
     if len(colors) < 2:
         raise ValueError("At least two enabled filament colors are required.")
 
@@ -58,7 +59,6 @@ def run_token_pipeline(
     # maximum of this dynamic width and the provided max_mesh_width_px to avoid
     # downsampling large images.  See the README for context on this heuristic.
     target_mm_per_cell = project.printer_preferences.nozzle_size_mm / 4.0
-    # Guard against zero or negative nozzle sizes; fallback to default resolution
     if target_mm_per_cell <= 0:
         desired_width_px = max_mesh_width_px
     else:
@@ -83,24 +83,19 @@ def run_token_pipeline(
     layer_pixels = np.asarray(palette_rgb, dtype=np.uint8)[cleaned_index]
     layer_preview = Image.fromarray(layer_pixels, mode="RGB")
 
-    plan = calculate_layer_plan(project.printer_preferences, colors, snap=snap_thickness)
+    plan = calculate_layer_plan(project.printer_preferences, colors, snap=snap_thickness, custom_stops=project.layer_color_stops)
     heights = height_map_from_indices(cleaned_index, colors, plan)
 
     # Style mask gently pushes frame/text features toward higher Z, so style choices are not preview-only.
     style_values = np.asarray(style_mask_small, dtype=np.float32) / 255.0
     heights = np.maximum(heights, style_values * plan.finished_thickness_mm)
 
-    # Smooth the height map to reduce blockiness in the generated mesh.  We use a
-    # small Gaussian blur kernel; the sigma value of 1 yields gentle smoothing
-    # without destroying edge detail.  Wrap in a try/except to avoid failing
-    # entirely if OpenCV is unavailable at runtime.
+    # Smooth the height map to reduce blockiness in the generated mesh.
     try:
         heights = cv2.GaussianBlur(heights.astype(np.float32), (5, 5), sigmaX=1)
     except Exception:
-        # If cv2 is unavailable or errors, fall back to the unsmoothed map
         pass
 
-    # Apply the rounded token mask: set heights outside the card shape to zero.
     token_mask_array = np.asarray(token_mask_small, dtype=np.uint8)
     heights[token_mask_array == 0] = 0.0
 
