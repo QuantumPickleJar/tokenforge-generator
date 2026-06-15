@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import math  # for dynamic resolution calculation based on nozzle size
-import cv2  # for Gaussian smoothing of height maps
+import math
+
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -14,6 +15,10 @@ from .models import FilamentColor, ProjectState
 from .palette import map_image_to_palette
 from .tf_layer_plan import layer_colors_for_project
 from .utils import hex_to_rgb
+
+
+DEFAULT_MESH_WIDTH_PX = 180
+MAX_MESH_WIDTH_PX = 240
 
 
 @dataclass(slots=True)
@@ -28,17 +33,34 @@ class PipelineResult:
     ordered_colors: list[FilamentColor]
 
 
-def resize_for_working_resolution(image: Image.Image, max_width_px: int = 180) -> Image.Image:
-    if image.width <= max_width_px:
+def resize_for_working_resolution(image: Image.Image, target_width_px: int = DEFAULT_MESH_WIDTH_PX) -> Image.Image:
+    target_width_px = max(32, int(target_width_px))
+    if image.width <= target_width_px:
         return image.copy()
-    height = max(1, int(round(image.height * (max_width_px / image.width))))
-    return image.resize((max_width_px, height), Image.Resampling.LANCZOS)
+    height = max(1, int(round(image.height * (target_width_px / image.width))))
+    return image.resize((target_width_px, height), Image.Resampling.LANCZOS)
+
+
+def _mesh_width_for_project(project: ProjectState, requested_width_px: int) -> int:
+    """Return a responsive v0.1 mesh width.
+
+    The old nozzle-derived estimate could request ~630 px wide meshes for a
+    0.4 mm nozzle. That is hundreds of thousands of height-map cells and can
+    block or disconnect the NiceGUI session. We still use the nozzle heuristic
+    as a hint, but cap it for local interactive use.
+    """
+    target_mm_per_cell = project.printer_preferences.nozzle_size_mm / 4.0
+    if target_mm_per_cell <= 0:
+        desired_width_px = requested_width_px
+    else:
+        desired_width_px = int(math.ceil(project.token_defaults.width_mm / target_mm_per_cell))
+    return max(DEFAULT_MESH_WIDTH_PX, min(MAX_MESH_WIDTH_PX, max(requested_width_px, desired_width_px)))
 
 
 def run_token_pipeline(
     prepared_image: Image.Image,
     project: ProjectState,
-    max_mesh_width_px: int = 150,
+    max_mesh_width_px: int = DEFAULT_MESH_WIDTH_PX,
     snap_thickness: str = "nearest",
 ) -> PipelineResult:
     colors = layer_colors_for_project(project)
@@ -51,22 +73,9 @@ def run_token_pipeline(
         project.style_settings,
         imported_fonts=project.imported_fonts,
     )
-    # Dynamically adjust the working resolution based on the printer's nozzle size.  A
-    # finer mesh leads to smoother 2.5D reliefs on printers with smaller nozzles.
-    # We target a cell size of roughly one quarter of the nozzle width (e.g. ~0.1 mm
-    # for a 0.4 mm nozzle).  The desired pixel width is computed by dividing the
-    # token width in mm by the target mm-per-cell, then rounded up.  We take the
-    # maximum of this dynamic width and the provided max_mesh_width_px to avoid
-    # downsampling large images.  See the README for context on this heuristic.
-    target_mm_per_cell = project.printer_preferences.nozzle_size_mm / 4.0
-    if target_mm_per_cell <= 0:
-        desired_width_px = max_mesh_width_px
-    else:
-        desired_width_px = int(math.ceil(project.token_defaults.width_mm / target_mm_per_cell))
-    working = resize_for_working_resolution(
-        composition.image,
-        max(desired_width_px, max_mesh_width_px),
-    )
+
+    working_width_px = _mesh_width_for_project(project, max_mesh_width_px)
+    working = resize_for_working_resolution(composition.image, working_width_px)
     style_mask_small = composition.style_height_mask.resize(working.size, Image.Resampling.BILINEAR)
     token_mask_small = composition.rounded_token_mask.resize(working.size, Image.Resampling.NEAREST)
 
