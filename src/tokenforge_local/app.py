@@ -107,13 +107,29 @@ def handle_crop_mouse(e: events.MouseEventArguments) -> None:
         refresh_crop_preview()
 
 
-def handle_upload(e: events.UploadEventArguments) -> None:
-    name = safe_project_name(Path(e.name).stem)
+async def handle_upload(e: events.UploadEventArguments) -> None:
+    upload_file = getattr(e, "file", None)
+    raw_name = getattr(e, "name", None) or getattr(upload_file, "name", None) or "uploaded-image.png"
+    filename = Path(raw_name).name or "uploaded-image.png"
+    name = safe_project_name(Path(filename).stem) or "uploaded-image"
+    suffix = Path(filename).suffix.lower() or ".png"
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}:
+        suffix = ".png"
+
     upload_dir = Path("outputs/uploads")
     upload_dir.mkdir(parents=True, exist_ok=True)
-    target = upload_dir / e.name
-    with target.open("wb") as handle:
-        handle.write(e.content.read())
+
+    if upload_file is not None and hasattr(upload_file, "save"):
+        await upload_file.save(target)
+    elif hasattr(e, "content"):
+        data = e.content.read()
+        if inspect.isawaitable(data):
+            data = await data
+        with target.open("wb") as handle:
+            handle.write(data)
+    else:
+        set_status("Upload failed: unsupported NiceGUI upload payload.", negative=True)
+        return
     state.source_path = target
     state.source_image = Image.open(target).convert("RGB")
     state.project.project_name = name
