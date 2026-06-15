@@ -34,6 +34,7 @@ class AppState:
         self.layer_preview_widget = None
         self.layer_editor_container = None
         self.status = None
+        self.is_generating = False
         self.dragging = False
         self.last_mouse_x = 0.0
         self.last_mouse_y = 0.0
