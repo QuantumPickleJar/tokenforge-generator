@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import math  # for dynamic resolution calculation based on nozzle size
+import cv2  # for Gaussian smoothing of height maps
 import numpy as np
 from PIL import Image
 
@@ -48,7 +50,23 @@ def run_token_pipeline(
         project.style_settings,
         imported_fonts=project.imported_fonts,
     )
-    working = resize_for_working_resolution(composition.image, max_mesh_width_px)
+    # Dynamically adjust the working resolution based on the printer's nozzle size.  A
+    # finer mesh leads to smoother 2.5D reliefs on printers with smaller nozzles.
+    # We target a cell size of roughly one quarter of the nozzle width (e.g. ~0.1 mm
+    # for a 0.4 mm nozzle).  The desired pixel width is computed by dividing the
+    # token width in mm by the target mm-per-cell, then rounded up.  We take the
+    # maximum of this dynamic width and the provided max_mesh_width_px to avoid
+    # downsampling large images.  See the README for context on this heuristic.
+    target_mm_per_cell = project.printer_preferences.nozzle_size_mm / 4.0
+    # Guard against zero or negative nozzle sizes; fallback to default resolution
+    if target_mm_per_cell <= 0:
+        desired_width_px = max_mesh_width_px
+    else:
+        desired_width_px = int(math.ceil(project.token_defaults.width_mm / target_mm_per_cell))
+    working = resize_for_working_resolution(
+        composition.image,
+        max(desired_width_px, max_mesh_width_px),
+    )
     style_mask_small = composition.style_height_mask.resize(working.size, Image.Resampling.BILINEAR)
     token_mask_small = composition.rounded_token_mask.resize(working.size, Image.Resampling.NEAREST)
 
@@ -71,12 +89,25 @@ def run_token_pipeline(
     # Style mask gently pushes frame/text features toward higher Z, so style choices are not preview-only.
     style_values = np.asarray(style_mask_small, dtype=np.float32) / 255.0
     heights = np.maximum(heights, style_values * plan.finished_thickness_mm)
-    heights[token_mask_small.resize(working.size, Image.Resampling.NEAREST) == 0] = 0.0
+
+    # Smooth the height map to reduce blockiness in the generated mesh.  We use a
+    # small Gaussian blur kernel; the sigma value of 1 yields gentle smoothing
+    # without destroying edge detail.  Wrap in a try/except to avoid failing
+    # entirely if OpenCV is unavailable at runtime.
+    try:
+        heights = cv2.GaussianBlur(heights.astype(np.float32), (5, 5), sigmaX=1)
+    except Exception:
+        # If cv2 is unavailable or errors, fall back to the unsmoothed map
+        pass
+
+    # Apply the rounded token mask: set heights outside the card shape to zero.
+    token_mask_array = np.asarray(token_mask_small, dtype=np.uint8)
+    heights[token_mask_array == 0] = 0.0
 
     mesh = height_map_to_mesh(
         heights,
         project.token_defaults,
-        token_mask=np.asarray(token_mask_small, dtype=np.uint8) > 0,
+        token_mask=token_mask_array > 0,
         simplify_stride=1,
     )
     project.generated_layer_plan = plan
