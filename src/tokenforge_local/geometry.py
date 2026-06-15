@@ -6,24 +6,14 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from .models import FilamentColor, LayerBand, LayerPlan, PrinterPreferences, TokenDefaults
-from .utils import hex_to_rgb
+from .models import FilamentColor, LayerBand, LayerColorStop, LayerPlan, PrinterPreferences, TokenDefaults
 
 
-def calculate_layer_plan(preferences: PrinterPreferences, colors: list[FilamentColor], snap: str = "nearest") -> LayerPlan:
-    """Calculate slicer-compatible layer/Z positions for manual color swaps.
-
-    Parameters:
-        preferences: Printer layer heights and requested finished thickness.
-        colors: Enabled filament colors in print order.
-        snap: "down", "up", or "nearest" when thickness does not align.
-    """
+def _snapped_physical_layers(preferences: PrinterPreferences, snap: str) -> tuple[int, float, float | None, str | None]:
     if preferences.initial_layer_height_mm <= 0 or preferences.standard_layer_height_mm <= 0:
         raise ValueError("Layer heights must be positive.")
     if preferences.finished_model_thickness_mm <= preferences.initial_layer_height_mm:
         raise ValueError("Finished thickness must exceed the initial layer height.")
-    if not colors:
-        raise ValueError("At least one enabled color is required.")
 
     requested = preferences.finished_model_thickness_mm
     raw_standard_layers = (requested - preferences.initial_layer_height_mm) / preferences.standard_layer_height_mm
@@ -47,21 +37,90 @@ def calculate_layer_plan(preferences: PrinterPreferences, colors: list[FilamentC
         warning = f"Requested thickness {requested:.3f} mm does not align to layer heights; snapped to {snapped:.3f} mm."
         snapped_from = requested
 
-    total_layers = 1 + standard_layers
+    return 1 + standard_layers, snapped, snapped_from, warning
+
+
+def z_height_for_layer(preferences: PrinterPreferences, layer_number: int) -> float:
+    if layer_number <= 1:
+        return preferences.initial_layer_height_mm
+    return preferences.initial_layer_height_mm + (layer_number - 1) * preferences.standard_layer_height_mm
+
+
+def _default_start_layers(total_layers: int, color_count: int) -> list[int]:
+    base = total_layers // color_count
+    remainder = total_layers % color_count
+    starts: list[int] = []
+    current_layer = 1
+    for index in range(color_count):
+        starts.append(current_layer)
+        current_layer += base + (1 if index < remainder else 0)
+    return starts
+
+
+def _custom_start_layers(total_layers: int, colors: list[FilamentColor], custom_stops: list[LayerColorStop]) -> list[int]:
+    start_by_name = {stop.color_name: int(stop.start_layer) for stop in custom_stops}
+    starts = [start_by_name.get(color.name, 1) for color in colors]
+    starts[0] = 1
+    for index in range(len(starts)):
+        minimum = 1 if index == 0 else starts[index - 1] + 1
+        maximum = total_layers - (len(starts) - index) + 1
+        starts[index] = max(minimum, min(maximum, starts[index]))
+    return starts
+
+
+def calculate_layer_plan(
+    preferences: PrinterPreferences,
+    colors: list[FilamentColor],
+    snap: str = "nearest",
+    custom_stops: list[LayerColorStop] | None = None,
+) -> LayerPlan:
+    """Calculate slicer-compatible layer/Z positions for manual color swaps.
+
+    Parameters:
+        preferences: Printer layer heights and requested finished thickness.
+        colors: Enabled filament colors in print order.
+        snap: "down", "up", or "nearest" when thickness does not align.
+        custom_stops: Optional editable color stop start layers from the v0.1.2 layer slider.
+    """
+    if not colors:
+        raise ValueError("At least one enabled color is required.")
+
+    total_layers, snapped, snapped_from, warning = _snapped_physical_layers(preferences, snap)
     if len(colors) > total_layers:
         raise ValueError("Not enough physical layers for every enabled color. Increase thickness or reduce colors.")
 
-    # Allocate one or more complete slicer layers to each color band.
-    base = total_layers // len(colors)
-    remainder = total_layers % len(colors)
+    starts = _custom_start_layers(total_layers, colors, custom_stops) if custom_stops else _default_start_layers(total_layers, len(colors))
     color_layers: list[LayerBand] = []
-    current_layer = 1
-    for idx, color in enumerate(colors):
-        band_layers = base + (1 if idx < remainder else 0)
-        z = preferences.initial_layer_height_mm if current_layer == 1 else preferences.initial_layer_height_mm + (current_layer - 1) * preferences.standard_layer_height_mm
-        action = "Start print with this filament" if idx == 0 else f"Swap to {color.name} at or before Z={z:.3f} mm"
-        color_layers.append(LayerBand(current_layer, round(z, 4), color.name, color.hex, action))
-        current_layer += band_layers
+    for index, (color, start_layer) in enumerate(zip(colors, starts, strict=True)):
+        next_start = starts[index + 1] if index + 1 < len(starts) else total_layers + 1
+        end_layer = max(start_layer, next_start - 1)
+        span_layers = max(1, end_layer - start_layer + 1)
+        z = round(z_height_for_layer(preferences, start_layer), 4)
+        top_z = round(z_height_for_layer(preferences, end_layer), 4)
+
+        if index == 0:
+            action = f"Start print with {color.name}; no G-code edit before layer 1."
+            gcode_layer = None
+            gcode_z = None
+        else:
+            action = f"Insert a color-change/pause before layer {start_layer} (at or before Z={z:.3f} mm), then swap to {color.name}."
+            gcode_layer = start_layer
+            gcode_z = z
+
+        color_layers.append(
+            LayerBand(
+                layer_number=start_layer,
+                z_height_mm=z,
+                color_name=color.name,
+                color_hex=color.hex,
+                action=action,
+                end_layer=end_layer,
+                span_layers=span_layers,
+                top_z_height_mm=top_z,
+                gcode_insert_before_layer=gcode_layer,
+                gcode_insert_at_z_mm=gcode_z,
+            )
+        )
 
     return LayerPlan(
         base_layers=1,
@@ -76,7 +135,7 @@ def calculate_layer_plan(preferences: PrinterPreferences, colors: list[FilamentC
 def height_map_from_indices(index_map: np.ndarray, colors: list[FilamentColor], layer_plan: LayerPlan) -> np.ndarray:
     if index_map.ndim != 2:
         raise ValueError("index_map must be 2D.")
-    z_by_color_name = {band.color_name: band.z_height_mm for band in layer_plan.color_layers}
+    z_by_color_name = {band.color_name: (band.top_z_height_mm if band.top_z_height_mm is not None else band.z_height_mm) for band in layer_plan.color_layers}
     max_z = layer_plan.finished_thickness_mm
     heights = np.zeros(index_map.shape, dtype=np.float32)
     for idx, color in enumerate(colors):
@@ -137,8 +196,6 @@ def height_map_to_mesh(
             if not inside[y, x]:
                 continue
             z = float(max(0.01, heights[y, x]))
-            # Top and bottom for every included cell. Duplicate vertices are acceptable here;
-            # watertightness is handled by explicit side quads at every boundary/discontinuity.
             _add_quad(vertices, faces, coord(x, y, z), coord(x + 1, y, z), coord(x + 1, y + 1, z), coord(x, y + 1, z))
             _add_quad(vertices, faces, coord(x, y, 0.0), coord(x, y + 1, 0.0), coord(x + 1, y + 1, 0.0), coord(x + 1, y, 0.0), flip=False)
 
