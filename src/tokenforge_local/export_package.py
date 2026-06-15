@@ -14,8 +14,20 @@ from .utils import safe_project_name, write_json
 
 def write_swap_plan_csv(path: Path, layer_plan: LayerPlan) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "layer_number",
+        "end_layer",
+        "span_layers",
+        "z_height_mm",
+        "top_z_height_mm",
+        "gcode_insert_before_layer",
+        "gcode_insert_at_z_mm",
+        "color_name",
+        "color_hex",
+        "action",
+    ]
     with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["layer_number", "z_height_mm", "color_name", "color_hex", "action"])
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         for band in layer_plan.color_layers:
             writer.writerow(dataclass_to_dict(band))
@@ -66,14 +78,25 @@ def write_print_notes(path: Path, project: ProjectState, layer_plan: LayerPlan) 
     lines.append("")
     lines.append("Filament order and manual swaps")
     for band in layer_plan.color_layers:
-        lines.append(f"- Layer {band.layer_number}, Z={band.z_height_mm:.3f} mm: {band.color_name} ({band.color_hex}) — {band.action}")
+        end_layer = band.end_layer if band.end_layer is not None else band.layer_number
+        lines.append(
+            f"- Layers {band.layer_number}-{end_layer} ({band.span_layers} layers), "
+            f"Z start={band.z_height_mm:.3f} mm, Z top={(band.top_z_height_mm if band.top_z_height_mm is not None else band.z_height_mm):.3f} mm: {band.color_name} ({band.color_hex})"
+        )
+        if band.gcode_insert_before_layer is None:
+            lines.append("  G-code: no edit before layer 1; start the print with this filament loaded.")
+        else:
+            lines.append(
+                f"  G-code: add M600 / Pause at Height / slicer color change before layer "
+                f"{band.gcode_insert_before_layer} at or before Z={band.gcode_insert_at_z_mm:.3f} mm."
+            )
     lines.append("")
     lines.append("Slicer checklist")
     lines.append("- Import STL.")
     lines.append("- Confirm X/Y/Z dimensions.")
     lines.append("- Confirm initial and standard layer heights match this note.")
     lines.append("- Do not scale Z in the slicer.")
-    lines.append("- Add color changes or pauses at the listed Z heights.")
+    lines.append("- Add color changes or pauses at the listed layer/Z checkpoints.")
     lines.append("- Preview before printing.")
     lines.append("- Export G-code from the slicer, not from Tokenforge Local.")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -109,7 +132,6 @@ def export_print_package(
     write_print_notes(notes_path, project, project.generated_layer_plan)
     write_json(json_path, project)
 
-    # A ZIP cannot recursively contain itself. The output ZIP contains every printable artifact.
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in [stl_path, preview_path, layer_preview_path, csv_path, notes_path, json_path]:
             archive.write(path, arcname=path.name)
