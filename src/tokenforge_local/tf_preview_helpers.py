@@ -6,7 +6,8 @@ import traceback
 from .app_state import clear_widget, mark_dirty, set_status, state
 from .composition import build_styled_composition
 from .image_editor import apply_crop_transform, preview_with_stencil
-from .palette import enabled_colors, map_image_to_palette, sort_colors_for_layering
+from .palette import map_image_to_palette
+from .tf_layer_plan import layer_colors_for_project
 from .utils import image_to_data_url, safe_project_name
 
 try:
@@ -48,7 +49,7 @@ def refresh_reduced_color_preview(notify_user: bool = False) -> tuple[bool, str]
     if state.reduced_preview_widget is None:
         return False, "Reduced-color preview UI is not ready yet."
 
-    colors = sort_colors_for_layering(enabled_colors(state.project.enabled_palette_colors))
+    colors = layer_colors_for_project(state.project)
     if not colors:
         message = "Enable at least one filament color to render the reduced-color preview."
         clear_widget(state.reduced_preview_widget)
