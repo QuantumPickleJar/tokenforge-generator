@@ -14,6 +14,7 @@ from .image_pipeline import run_token_pipeline
 from .models import FilamentColor
 from .palette import validate_enabled_palette
 from .preferences import save_preferences
+from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import refresh_crop_preview, refresh_reduced_color_preview, refresh_styled_preview, refresh_visual_previews
 from .utils import image_to_data_url, safe_project_name
 
@@ -73,11 +74,13 @@ async def handle_upload(e: events.UploadEventArguments) -> None:
     state.project.project_name = project_name
     state.project.source_image = str(target)
     state.project.crop_transform = default_crop_transform(str(target), state.project.token_defaults)
+    state.project.layer_color_stops = []
     state.prepared_image = None
     state.reduced_preview_path = None
     mark_dirty()
     for widget in (state.styled_preview_widget, state.reduced_preview_widget, state.layer_preview_widget):
         clear_widget(widget)
+    refresh_layer_controls()
     refresh_crop_preview()
     set_status("Image uploaded. Adjust pan/zoom/rotation, then confirm the crop.")
 
@@ -88,9 +91,10 @@ def confirm_crop() -> None:
         return
     state.prepared_image = apply_crop_transform(state.source_image, state.project.crop_transform)
     mark_dirty()
+    refresh_layer_controls()
     refresh_styled_preview()
     ok, message = refresh_reduced_color_preview(False)
-    set_status("Prepared image confirmed. Reduced-color preview updated; configure style/palette or generate the package." if ok else f"Prepared image confirmed. {message}")
+    set_status("Prepared image confirmed. Reduced-color preview updated; configure style/palette/layer plan or generate the package." if ok else f"Prepared image confirmed. {message}")
 
 
 def persist_preferences_from_ui() -> None:
@@ -124,6 +128,7 @@ def generate_package() -> None:
             state.styled_preview_widget.set_source(image_to_data_url(result.composition.image))
         if state.layer_preview_widget:
             state.layer_preview_widget.set_source(image_to_data_url(result.layer_preview.resize((315, 440))))
+        refresh_layer_controls()
         set_status(f"Print package created: {paths['zip']}")
     except Exception as exc:  # pragma: no cover - UI path
         traceback.print_exc()
@@ -138,6 +143,7 @@ def palette_changed(color: FilamentColor, *, enabled: Any | None = None, hex_val
         if incoming:
             color.hex = incoming
     mark_dirty()
+    refresh_layer_controls()
     refresh_reduced_color_preview(False)
 
 
