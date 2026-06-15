@@ -32,6 +32,13 @@ class FilamentColor:
 
 
 @dataclass(slots=True)
+class LayerColorStop:
+    start_layer: int
+    color_name: str
+    color_hex: str
+
+
+@dataclass(slots=True)
 class FontReference:
     family: str = "DejaVu Sans"
     source: Literal["system", "imported"] = "system"
@@ -81,6 +88,11 @@ class LayerBand:
     color_name: str
     color_hex: str
     action: str
+    end_layer: int | None = None
+    span_layers: int = 1
+    top_z_height_mm: float | None = None
+    gcode_insert_before_layer: int | None = None
+    gcode_insert_at_z_mm: float | None = None
 
 
 @dataclass(slots=True)
@@ -103,6 +115,7 @@ class ProjectState:
     enabled_palette_colors: list[FilamentColor] = field(default_factory=list)
     style_settings: StyleSettings = field(default_factory=StyleSettings)
     imported_fonts: list[FontReference] = field(default_factory=list)
+    layer_color_stops: list[LayerColorStop] = field(default_factory=list)
     generated_layer_plan: LayerPlan | None = None
 
 
@@ -147,6 +160,10 @@ def token_from_dict(raw: dict[str, Any]) -> TokenDefaults:
 
 def filament_from_dict(raw: dict[str, Any]) -> FilamentColor:
     return FilamentColor(**{k: raw[k] for k in raw if k in {f.name for f in fields(FilamentColor)}})
+
+
+def layer_color_stop_from_dict(raw: dict[str, Any]) -> LayerColorStop:
+    return LayerColorStop(**{k: raw[k] for k in raw if k in {f.name for f in fields(LayerColorStop)}})
 
 
 def font_from_dict(raw: dict[str, Any]) -> FontReference:
@@ -201,5 +218,6 @@ def project_from_dict(raw: dict[str, Any]) -> ProjectState:
         enabled_palette_colors=[filament_from_dict(item) for item in raw.get("enabled_palette_colors", [])],
         style_settings=style_from_dict(raw.get("style_settings", {})),
         imported_fonts=[font_from_dict(item) for item in raw.get("imported_fonts", [])],
+        layer_color_stops=[layer_color_stop_from_dict(item) for item in raw.get("layer_color_stops", [])],
         generated_layer_plan=layer_plan_from_dict(raw["generated_layer_plan"]) if raw.get("generated_layer_plan") else None,
     )
