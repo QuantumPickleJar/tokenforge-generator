@@ -7,6 +7,7 @@ from .image_editor import reset_transform, rotate_transform_90
 from .models import FilamentColor
 from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
+from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_reduced_color_preview, refresh_visual_previews
 from .utils import safe_project_name
 
@@ -14,6 +15,11 @@ try:
     from nicegui import ui
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
+
+
+def _refresh_profile_dependents() -> None:
+    refresh_layer_controls()
+    refresh_reduced_color_preview(False)
 
 
 def number(label: str, target: Any, attr: str, *, minimum: float | int | None = None, maximum: float | int | None = None, step: float | int = 1, as_int: bool = False, refresh: Callable[[], None] | None = None):
@@ -28,9 +34,9 @@ def number(label: str, target: Any, attr: str, *, minimum: float | int | None = 
 
 
 def build_ui() -> None:
-    ui.page_title("Tokenforge Local v0.1")
+    ui.page_title("Tokenforge Local v0.1.2")
     with ui.header().classes("items-center justify-between"):
-        ui.label("Tokenforge Local v0.1").classes("text-xl font-bold")
+        ui.label("Tokenforge Local v0.1.2").classes("text-xl font-bold")
         ui.label("Local-only · no G-code · no slicer · no AI")
 
     with ui.row().classes("w-full no-wrap items-start"):
@@ -55,11 +61,11 @@ def build_ui() -> None:
             ui.separator()
             ui.label("2. Printer/profile preferences").classes("text-lg font-bold")
             prefs = state.project.printer_preferences
-            number("Nozzle size mm", prefs, "nozzle_size_mm", minimum=0.1, step=0.05)
-            number("Initial layer height mm", prefs, "initial_layer_height_mm", minimum=0.05, step=0.01)
-            number("Standard layer height mm", prefs, "standard_layer_height_mm", minimum=0.05, step=0.01)
-            number("Finished thickness mm", prefs, "finished_model_thickness_mm", minimum=0.4, step=0.05)
-            number("Minimum feature size mm", prefs, "minimum_feature_size_mm", minimum=0.1, step=0.05)
+            number("Nozzle size mm", prefs, "nozzle_size_mm", minimum=0.1, step=0.05, refresh=_refresh_profile_dependents)
+            number("Initial layer height mm", prefs, "initial_layer_height_mm", minimum=0.05, step=0.01, refresh=_refresh_profile_dependents)
+            number("Standard layer height mm", prefs, "standard_layer_height_mm", minimum=0.05, step=0.01, refresh=_refresh_profile_dependents)
+            number("Finished thickness mm", prefs, "finished_model_thickness_mm", minimum=0.4, step=0.05, refresh=_refresh_profile_dependents)
+            number("Minimum feature size mm", prefs, "minimum_feature_size_mm", minimum=0.1, step=0.05, refresh=refresh_reduced_color_preview)
 
         with ui.column().classes("w-1/3 gap-4"):
             ui.label("3. Style and layout").classes("text-lg font-bold")
@@ -106,10 +112,14 @@ def build_ui() -> None:
                     state.project.enabled_palette_colors.append(FilamentColor(new_name.value, new_hex.value, True))
                     persist_preferences_from_ui()
                     mark_dirty()
+                    refresh_layer_controls()
                     refresh_reduced_color_preview(False)
                     set_status("Color added. Refresh the page to see it in the simple v0.1 palette list.")
 
                 ui.button("Add color", on_click=add_color)
+
+            state.layer_editor_container = ui.column().classes("w-full gap-2")
+            refresh_layer_controls()
 
             with ui.row():
                 ui.button("Refresh color preview", on_click=lambda: refresh_reduced_color_preview(True))
