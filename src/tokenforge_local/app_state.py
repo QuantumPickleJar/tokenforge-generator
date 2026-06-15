@@ -32,6 +32,7 @@ class AppState:
         self.styled_preview_widget = None
         self.reduced_preview_widget = None
         self.layer_preview_widget = None
+        self.layer_editor_container = None
         self.status = None
         self.dragging = False
         self.last_mouse_x = 0.0
