@@ -1,3 +1,147 @@
 from __future__ import annotations
 
-# placeholder
+from pathlib import Path
+import inspect
+import traceback
+from typing import Any, Callable
+
+from PIL import Image
+
+from .app_state import clear_widget, mark_dirty, set_status, state
+from .export_package import export_print_package
+from .image_editor import apply_crop_transform, default_crop_transform
+from .image_pipeline import run_token_pipeline
+from .models import FilamentColor
+from .palette import validate_enabled_palette
+from .preferences import save_preferences
+from .tf_preview_helpers import refresh_crop_preview, refresh_reduced_color_preview, refresh_styled_preview, refresh_visual_previews
+from .utils import image_to_data_url, safe_project_name
+
+try:
+    from nicegui import events, ui
+except ModuleNotFoundError as exc:  # pragma: no cover
+    raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
+
+
+async def handle_upload(e: events.UploadEventArguments) -> None:
+    upload_file = getattr(e, "file", None)
+    raw_name = (
+        getattr(e, "name", None)
+        or getattr(e, "filename", None)
+        or getattr(upload_file, "filename", None)
+        or getattr(upload_file, "name", None)
+        or "uploaded-image.png"
+    )
+    filename = Path(str(raw_name)).name or "uploaded-image.png"
+    project_name = safe_project_name(Path(filename).stem) or "uploaded-image"
+    suffix = Path(filename).suffix.lower() or ".png"
+    if suffix not in {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif", ".tif", ".tiff"}:
+        suffix = ".png"
+
+    upload_dir = Path("outputs/uploads")
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    target = upload_dir / f"{project_name}{suffix}"
+    counter = 1
+    while target.exists():
+        target = upload_dir / f"{project_name}-{counter}{suffix}"
+        counter += 1
+
+    if upload_file is not None and hasattr(upload_file, "save"):
+        saved = upload_file.save(target)
+        if inspect.isawaitable(saved):
+            await saved
+    elif hasattr(e, "content"):
+        content = e.content
+        data = content.read() if hasattr(content, "read") else content
+        if inspect.isawaitable(data):
+            data = await data
+        if isinstance(data, str):
+            data = data.encode()
+        with target.open("wb") as handle:
+            handle.write(data)
+    else:
+        set_status("Upload failed: unsupported NiceGUI upload payload.", negative=True)
+        return
+
+    try:
+        state.source_path = target
+        state.source_image = Image.open(target).convert("RGB")
+    except Exception as exc:
+        set_status(f"Upload failed: could not read image ({exc}).", negative=True)
+        return
+
+    state.project.project_name = project_name
+    state.project.source_image = str(target)
+    state.project.crop_transform = default_crop_transform(str(target), state.project.token_defaults)
+    state.prepared_image = None
+    state.reduced_preview_path = None
+    mark_dirty()
+    for widget in (state.styled_preview_widget, state.reduced_preview_widget, state.layer_preview_widget):
+        clear_widget(widget)
+    refresh_crop_preview()
+    set_status("Image uploaded. Adjust pan/zoom/rotation, then confirm the crop.")
+
+
+def confirm_crop() -> None:
+    if state.source_image is None:
+        set_status("Upload an image first.", negative=True)
+        return
+    state.prepared_image = apply_crop_transform(state.source_image, state.project.crop_transform)
+    mark_dirty()
+    refresh_styled_preview()
+    ok, message = refresh_reduced_color_preview(False)
+    set_status("Prepared image confirmed. Reduced-color preview updated; configure style/palette or generate the package." if ok else f"Prepared image confirmed. {message}")
+
+
+def persist_preferences_from_ui() -> None:
+    state.preferences.printer = state.project.printer_preferences
+    state.preferences.token_defaults = state.project.token_defaults
+    state.preferences.style_defaults = state.project.style_settings
+    state.preferences.palette = state.project.enabled_palette_colors
+    state.preferences.imported_fonts = state.project.imported_fonts
+    save_preferences(state.preferences)
+
+
+def generate_package() -> None:
+    if state.prepared_image is None:
+        set_status("Confirm the prepared image before generating.", negative=True)
+        return
+    warnings = validate_enabled_palette(state.project.enabled_palette_colors)
+    errors = [warning.message for warning in warnings if warning.severity == "error"]
+    if errors:
+        set_status(errors[0], negative=True)
+        return
+    for warning in warnings:
+        if warning.severity == "warning":
+            ui.notify(warning.message, type="warning")
+    try:
+        persist_preferences_from_ui()
+        result = run_token_pipeline(state.prepared_image, state.project)
+        output_dir = Path("outputs") / safe_project_name(state.project.project_name)
+        paths = export_print_package(state.project, result.mesh, result.composition.image, result.layer_preview, output_dir)
+        state.package_paths = paths
+        if state.styled_preview_widget:
+            state.styled_preview_widget.set_source(image_to_data_url(result.composition.image))
+        if state.layer_preview_widget:
+            state.layer_preview_widget.set_source(image_to_data_url(result.layer_preview.resize((315, 440))))
+        set_status(f"Print package created: {paths['zip']}")
+    except Exception as exc:  # pragma: no cover - UI path
+        traceback.print_exc()
+        set_status(f"Generation failed: {exc}", negative=True)
+
+
+def palette_changed(color: FilamentColor, *, enabled: Any | None = None, hex_value: Any | None = None) -> None:
+    if enabled is not None:
+        color.enabled = bool(enabled)
+    if hex_value is not None:
+        incoming = str(hex_value or "").strip()
+        if incoming:
+            color.hex = incoming
+    mark_dirty()
+    refresh_reduced_color_preview(False)
+
+
+def style_changed(setter: Callable[[], None]) -> None:
+    setter()
+    mark_dirty()
+    refresh_visual_previews()
