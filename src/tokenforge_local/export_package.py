@@ -104,6 +104,12 @@ def write_print_notes(path: Path, project: ProjectState, layer_plan: LayerPlan) 
     return path
 
 
+def export_viewer_glb(mesh: trimesh.Trimesh, path: Path) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    mesh.export(path, file_type="glb")
+    return path
+
+
 def export_print_package(
     project: ProjectState,
     mesh: trimesh.Trimesh,
@@ -118,6 +124,7 @@ def export_print_package(
     name = safe_project_name(project.project_name)
 
     stl_path = output_dir / f"{name}.stl"
+    glb_path = output_dir / f"{name}-viewer.glb"
     preview_path = output_dir / f"{name}-preview.png"
     layer_preview_path = output_dir / f"{name}-layer-preview.png"
     csv_path = output_dir / f"{name}-swap-plan.csv"
@@ -126,17 +133,27 @@ def export_print_package(
     zip_path = output_dir / f"{name}-print-package.zip"
 
     export_stl(mesh, stl_path)
+    viewer_path: Path | None = None
+    try:
+        viewer_path = export_viewer_glb(mesh, glb_path)
+    except Exception:
+        viewer_path = None
+
     preview.save(preview_path)
     layer_preview.save(layer_preview_path)
     write_swap_plan_csv(csv_path, project.generated_layer_plan)
     write_print_notes(notes_path, project, project.generated_layer_plan)
     write_json(json_path, project)
 
+    package_members = [stl_path, preview_path, layer_preview_path, csv_path, notes_path, json_path]
+    if viewer_path is not None and viewer_path.exists():
+        package_members.insert(1, viewer_path)
+
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in [stl_path, preview_path, layer_preview_path, csv_path, notes_path, json_path]:
+        for path in package_members:
             archive.write(path, arcname=path.name)
 
-    return {
+    result = {
         "stl": stl_path,
         "preview": preview_path,
         "layer_preview": layer_preview_path,
@@ -145,3 +162,6 @@ def export_print_package(
         "project_json": json_path,
         "zip": zip_path,
     }
+    if viewer_path is not None and viewer_path.exists():
+        result["model_glb"] = viewer_path
+    return result
