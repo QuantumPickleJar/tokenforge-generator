@@ -28,11 +28,13 @@ class AppState:
         self.prepared_image: Image.Image | None = None
         self.package_paths: dict[str, Path] | None = None
         self.reduced_preview_path: Path | None = None
+        self.stl_preview_path: Path | None = None
         self.crop_image_widget = None
         self.styled_preview_widget = None
         self.reduced_preview_widget = None
         self.layer_preview_widget = None
         self.layer_editor_container = None
+        self.stl_viewer_container = None
         self.status = None
         self.is_generating = False
         self.dragging = False
@@ -76,6 +78,7 @@ def coerce_float(value: Any, fallback: float, minimum: float | None = None, maxi
 
 def mark_dirty() -> None:
     state.package_paths = None
+    state.stl_preview_path = None
     state.project.generated_layer_plan = None
 
 
@@ -94,4 +97,7 @@ def clear_widget(widget: Any) -> None:
     try:
         widget.set_source("")
     except Exception:
-        pass
+        try:
+            widget.clear()
+        except Exception:
+            pass
