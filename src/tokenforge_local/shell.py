@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable
 
 from .app_state import mark_dirty, set_num, set_status, state
 from .image_editor import reset_transform, rotate_transform_90
 from .models import FilamentColor
+from .stl_viewer import render_model_viewer
 from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
 from .tf_layer_ui import refresh_layer_controls
@@ -12,9 +14,27 @@ from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_
 from .utils import safe_project_name
 
 try:
-    from nicegui import ui
+    from nicegui import app, ui
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
+
+
+_OUTPUTS_STATIC_REGISTERED = False
+_MODEL_VIEWER_HEAD_ADDED = False
+
+
+def _ensure_static_outputs_and_viewer_script() -> None:
+    global _OUTPUTS_STATIC_REGISTERED, _MODEL_VIEWER_HEAD_ADDED
+    Path("outputs").mkdir(parents=True, exist_ok=True)
+    if not _OUTPUTS_STATIC_REGISTERED:
+        try:
+            app.add_static_files("/outputs", "outputs")
+        except Exception:
+            pass
+        _OUTPUTS_STATIC_REGISTERED = True
+    if not _MODEL_VIEWER_HEAD_ADDED:
+        ui.add_head_html('<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>')
+        _MODEL_VIEWER_HEAD_ADDED = True
 
 
 def _refresh_profile_dependents() -> None:
@@ -167,6 +187,12 @@ def _build_preview_panel() -> None:
         ui.label("Populated after full STL/package generation using the same span-aware preview model.").classes("text-xs text-gray-600")
         state.layer_preview_widget = ui.image().classes("w-full border rounded max-h-[45vh]")
 
+    with ui.card().classes("w-full gap-1"):
+        ui.label("Generated 3D STL viewer").classes("font-bold")
+        ui.label("Populated after generation. The STL is still exported; this viewer uses a matching GLB preview artifact.").classes("text-xs text-gray-600")
+        state.stl_viewer_container = ui.column().classes("w-full")
+        render_model_viewer(state.stl_viewer_container, state.stl_preview_path)
+
 
 def _show_output_path() -> None:
     if not state.package_paths:
@@ -176,9 +202,10 @@ def _show_output_path() -> None:
 
 
 def build_ui() -> None:
-    ui.page_title("Tokenforge Local v0.1.3")
+    _ensure_static_outputs_and_viewer_script()
+    ui.page_title("Tokenforge Local v0.1.4")
     with ui.header().classes("items-center justify-between"):
-        ui.label("Tokenforge Local v0.1.3").classes("text-xl font-bold")
+        ui.label("Tokenforge Local v0.1.4").classes("text-xl font-bold")
         ui.label("Local-only · no G-code · no slicer · no AI")
 
     with ui.row().classes("w-full no-wrap items-start gap-4"):
