@@ -6,7 +6,7 @@ import traceback
 from .app_state import clear_widget, mark_dirty, set_status, state
 from .composition import build_styled_composition
 from .image_editor import apply_crop_transform, preview_with_stencil
-from .print_preview import simulate_layer_span_print_preview
+from .preview_artifacts import build_preview_artifacts
 from .tf_layer_plan import preview_layer_plan
 from .utils import image_to_data_url, safe_project_name
 
@@ -64,18 +64,17 @@ def refresh_reduced_color_preview(notify_user: bool = False) -> tuple[bool, str]
         return False, message
 
     try:
-        composition = build_current_composition()
-        if composition is None:
-            raise RuntimeError("styled composition was not available")
-
-        preview, _ = simulate_layer_span_print_preview(composition.image, colors, layer_plan)
+        artifacts = build_preview_artifacts(state.prepared_image, state.project)
         preview_dir = Path("outputs/previews")
         preview_dir.mkdir(parents=True, exist_ok=True)
         preview_path = preview_dir / f"{safe_project_name(state.project.project_name) or 'tokenforge-token'}-span-print-preview.png"
-        preview.save(preview_path)
+        artifacts.layer_span_preview.save(preview_path)
         state.reduced_preview_path = preview_path
-        state.reduced_preview_widget.set_source(image_to_data_url(preview))
-        message = f"Layer-span print preview updated: {preview_path}"
+        state.reduced_preview_widget.set_source(image_to_data_url(artifacts.layer_span_preview))
+        message = (
+            f"Layer-span print preview updated: {preview_path} "
+            f"({len(artifacts.ordered_colors)} colors, {artifacts.layer_plan.total_layers} layers)."
+        )
         if notify_user:
             set_status(message)
         return True, message
