@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenforge-local"
-version = "0.1.4"
+version = "0.1.5"
 description = "Local-first image-to-2.5D STL Magic-card-style token generator for manual filament swaps."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 tokenforge-local = "tokenforge_local.app:main"
+tokenforge-preview-smoke = "tokenforge_local.preview_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
