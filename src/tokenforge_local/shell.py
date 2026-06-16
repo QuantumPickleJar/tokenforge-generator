@@ -19,6 +19,7 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
 
+APP_VERSION = "0.1.5"
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
 
@@ -203,9 +204,9 @@ def _show_output_path() -> None:
 
 def build_ui() -> None:
     _ensure_static_outputs_and_viewer_script()
-    ui.page_title("Tokenforge Local v0.1.4")
+    ui.page_title(f"Tokenforge Local v{APP_VERSION}")
     with ui.header().classes("items-center justify-between"):
-        ui.label("Tokenforge Local v0.1.4").classes("text-xl font-bold")
+        ui.label(f"Tokenforge Local v{APP_VERSION}").classes("text-xl font-bold")
         ui.label("Local-only · no G-code · no slicer · no AI")
 
     with ui.row().classes("w-full no-wrap items-start gap-4"):
