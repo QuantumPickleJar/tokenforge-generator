@@ -158,13 +158,13 @@ def _build_preview_panel() -> None:
             ui.label("Art + current border/text/style.").classes("text-xs text-gray-600")
             state.styled_preview_widget = ui.image().classes("w-full border rounded")
         with ui.card().classes("w-full gap-1"):
-            ui.label("Reduced-color preview").classes("font-bold")
-            ui.label("Posterized to enabled filament colors.").classes("text-xs text-gray-600")
+            ui.label("Layer-span print preview").classes("font-bold")
+            ui.label("Simulates cumulative layer spans, so changing a color's layer count changes this view.").classes("text-xs text-gray-600")
             state.reduced_preview_widget = ui.image().classes("w-full border rounded")
 
     with ui.card().classes("w-full gap-1"):
         ui.label("Generated layer preview").classes("font-bold")
-        ui.label("Populated after full STL/package generation.").classes("text-xs text-gray-600")
+        ui.label("Populated after full STL/package generation using the same span-aware preview model.").classes("text-xs text-gray-600")
         state.layer_preview_widget = ui.image().classes("w-full border rounded max-h-[45vh]")
 
 
