@@ -16,6 +16,7 @@ from .image_pipeline import run_token_pipeline
 from .models import FilamentColor, LayerPlan, ProjectState
 from .palette import validate_enabled_palette
 from .preferences import save_preferences
+from .stl_viewer import render_model_viewer
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import refresh_crop_preview, refresh_reduced_color_preview, refresh_styled_preview, refresh_visual_previews
 from .utils import image_to_data_url, safe_project_name
@@ -79,9 +80,10 @@ async def handle_upload(e: events.UploadEventArguments) -> None:
     state.project.layer_color_stops = []
     state.prepared_image = None
     state.reduced_preview_path = None
+    state.stl_preview_path = None
     state.is_generating = False
     mark_dirty()
-    for widget in (state.styled_preview_widget, state.reduced_preview_widget, state.layer_preview_widget):
+    for widget in (state.styled_preview_widget, state.reduced_preview_widget, state.layer_preview_widget, state.stl_viewer_container):
         clear_widget(widget)
     refresh_layer_controls()
     refresh_crop_preview()
@@ -147,10 +149,12 @@ async def generate_package() -> None:
 
         state.package_paths = paths
         state.project.generated_layer_plan = layer_plan
+        state.stl_preview_path = paths.get("model_glb")
         if state.styled_preview_widget:
             state.styled_preview_widget.set_source(image_to_data_url(styled_preview))
         if state.layer_preview_widget:
             state.layer_preview_widget.set_source(image_to_data_url(layer_preview.resize((315, 440))))
+        render_model_viewer(state.stl_viewer_container, state.stl_preview_path)
         refresh_layer_controls()
         set_status(f"Print package created: {paths['zip']}")
     except MemoryError:
