@@ -49,6 +49,30 @@ def reset_layer_controls() -> None:
     _after_layer_edit("Layer color plan reset to an even dark-to-light order.")
 
 
+def auto_fit_layer_controls() -> None:
+    if state.prepared_image is None:
+        set_status("Confirm a crop before auto-fitting the layer plan to the image.", negative=True)
+        return
+    try:
+        from .composition import build_styled_composition
+        from .layer_optimizer import optimize_layer_stops_for_image
+
+        composition = build_styled_composition(
+            state.prepared_image,
+            state.project.token_defaults,
+            state.project.style_settings,
+            state.project.imported_fonts,
+        )
+        fit = optimize_layer_stops_for_image(composition.image, state.project)
+        state.project.layer_color_stops = fit.stops
+        span_summary = ", ".join(f"{color.name}:{span}" for color, span in zip(fit.ordered_colors, fit.spans, strict=True))
+        _after_layer_edit(
+            f"Auto-fit layer plan from enabled colors. Spans: {span_summary}. Estimated normalized RGB error: {fit.estimated_rmse:.3f}."
+        )
+    except Exception as exc:
+        set_status(f"Auto-fit failed: {exc}", negative=True)
+
+
 def _change_stop_color(index: int, raw_name: Any) -> None:
     set_stop_color(state.project, index, str(raw_name or ""))
     _after_layer_edit("Layer color order updated.")
@@ -187,5 +211,6 @@ def refresh_layer_controls() -> None:
                 with ui.column().classes("gap-2 grow"):
                     _render_band_controls(plan.color_layers, plan.total_layers)
                     with ui.row().classes("gap-2"):
+                        ui.button("Auto-fit to image", on_click=auto_fit_layer_controls).props("dense color=primary").tooltip("Reorder enabled colors and layer spans to best match the styled image")
                         ui.button("Reset layer plan", on_click=reset_layer_controls).props("dense")
                         ui.button("Refresh layer plan", on_click=refresh_layer_controls).props("dense")
