@@ -13,6 +13,7 @@ from .geometry import calculate_layer_plan, height_map_from_indices, height_map_
 from .masks import clean_index_map_tiny_islands
 from .models import FilamentColor, ProjectState
 from .palette import map_image_to_palette
+from .print_preview import simulate_layer_span_print_preview
 from .tf_layer_plan import layer_colors_for_project
 from .utils import hex_to_rgb
 
@@ -88,11 +89,10 @@ def run_token_pipeline(
         mm_per_pixel,
     )
 
-    palette_rgb = [hex_to_rgb(color.hex) for color in colors]
-    layer_pixels = np.asarray(palette_rgb, dtype=np.uint8)[cleaned_index]
-    layer_preview = Image.fromarray(layer_pixels, mode="RGB")
-
     plan = calculate_layer_plan(project.printer_preferences, colors, snap=snap_thickness, custom_stops=project.layer_color_stops)
+    layer_preview, _ = simulate_layer_span_print_preview(working, colors, plan)
+    project.generated_layer_plan = plan
+
     heights = height_map_from_indices(cleaned_index, colors, plan)
 
     # Style mask gently pushes frame/text features toward higher Z, so style choices are not preview-only.
@@ -114,5 +114,4 @@ def run_token_pipeline(
         token_mask=token_mask_array > 0,
         simplify_stride=1,
     )
-    project.generated_layer_plan = plan
     return PipelineResult(composition, posterized, layer_preview, cleaned_index, masks, plan, mesh, colors)
