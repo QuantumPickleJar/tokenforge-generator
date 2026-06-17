@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenforge-local"
-version = "0.1.6"
-description = "Local-first image-to-2.5D STL Magic-card-style token generator for manual filament swaps."
+version = "0.2.0"
+description = "Local-first image/STL-to-layer-color 3D preview workflow for manual filament swaps."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
