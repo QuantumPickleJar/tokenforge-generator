@@ -1,0 +1,31 @@
+name: Tokenforge tests
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/**"
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Run pytest
+        run: python scripts/run_tests.py
+      - name: Run preview smoke artifact builder
+        run: python scripts/run_preview_smoke.py --output-dir outputs/test-runs/preview-smoke
+      - name: Upload preview smoke artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-smoke-pngs
+          path: outputs/test-runs/preview-smoke/*.png
+          if-no-files-found: error
