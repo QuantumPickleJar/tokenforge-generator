@@ -10,7 +10,7 @@ from .stl_viewer import render_model_viewer
 from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
 from .tf_layer_ui import refresh_layer_controls
-from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_reduced_color_preview, refresh_visual_previews
+from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_crop_preview, refresh_reduced_color_preview, refresh_visual_previews
 from .utils import safe_project_name
 
 try:
@@ -19,7 +19,13 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
 
-APP_VERSION = "0.1.5"
+APP_VERSION = "0.1.6"
+APP_BRAND = "Tokenforge"
+MODE_IMG = "IMG"
+MODE_3D = "3D"
+MODE_OPTIONS = [MODE_IMG, MODE_3D]
+DEFAULT_MODE = MODE_IMG
+THREE_D_PLACEHOLDER_TEXT = "3D import preview is planned for v0.2. STL/3MF layer-color preview will be available here."
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
 
@@ -41,6 +47,10 @@ def _ensure_static_outputs_and_viewer_script() -> None:
 def _refresh_profile_dependents() -> None:
     refresh_layer_controls()
     refresh_reduced_color_preview(False)
+
+
+def _placeholder_status(label: str) -> None:
+    set_status(f"{label} menu is reserved for v0.2 workflow actions.", notify=True)
 
 
 def number(
@@ -179,8 +189,8 @@ def _build_preview_panel() -> None:
             ui.label("Art + current border/text/style.").classes("text-xs text-gray-600")
             state.styled_preview_widget = ui.image().classes("w-full border rounded")
         with ui.card().classes("w-full gap-1"):
-            ui.label("Layer-span print preview").classes("font-bold")
-            ui.label("Simulates cumulative layer spans, so changing a color's layer count changes this view.").classes("text-xs text-gray-600")
+            ui.label("Reduced-color filament preview").classes("font-bold")
+            ui.label("Layer-span print preview: simulates cumulative layer spans, so changing a color's layer count changes this view.").classes("text-xs text-gray-600")
             state.reduced_preview_widget = ui.image().classes("w-full border rounded")
 
     with ui.card().classes("w-full gap-1"):
@@ -202,15 +212,9 @@ def _show_output_path() -> None:
     ui.notify(f"ZIP path: {state.package_paths['zip']}")
 
 
-def build_ui() -> None:
-    _ensure_static_outputs_and_viewer_script()
-    ui.page_title(f"Tokenforge Local v{APP_VERSION}")
-    with ui.header().classes("items-center justify-between"):
-        ui.label(f"Tokenforge Local v{APP_VERSION}").classes("text-xl font-bold")
-        ui.label("Local-only · no G-code · no slicer · no AI")
-
-    with ui.row().classes("w-full no-wrap items-start gap-4"):
-        with ui.column().classes("w-1/2 gap-3"):
+def _build_img_workflow() -> None:
+    with ui.row().classes("w-full gap-4 items-start"):
+        with ui.column().classes("w-full lg:w-1/2 gap-3"):
             with ui.tabs().classes("w-full") as tabs:
                 prepare_tab = ui.tab("Prepare")
                 style_tab = ui.tab("Style")
@@ -227,8 +231,58 @@ def build_ui() -> None:
                 with ui.tab_panel(profile_tab).classes("gap-3"):
                     _build_profile_panel()
 
-        with ui.column().classes("w-1/2 gap-3 sticky top-20 self-start"):
+        with ui.column().classes("w-full lg:w-1/2 gap-3 lg:sticky top-20 self-start"):
             _build_preview_panel()
+
+    refresh_crop_preview()
+    if state.prepared_image is not None:
+        refresh_visual_previews()
+
+
+def _build_3d_placeholder_panel() -> None:
+    with ui.column().classes("w-full items-center justify-center min-h-[55vh] p-4"):
+        with ui.card().classes("w-full max-w-3xl gap-4 text-center"):
+            ui.label("3D mode").classes("text-2xl font-bold")
+            ui.label(THREE_D_PLACEHOLDER_TEXT).classes("text-base")
+            ui.label("Use the IMG toggle to return to the current image-driven workflow: upload image → crop → style → reduced-color preview → generate STL/package.").classes("text-sm text-gray-600")
+            with ui.row().classes("w-full justify-center gap-3"):
+                ui.button("Import STL/3MF", on_click=lambda: set_status("3D import is planned for v0.2 and is not enabled in v0.1.x.", notify=True)).props("disable")
+                ui.button("Layer-color 3D preview", on_click=lambda: set_status("STL/3MF layer-color preview is planned for v0.2.", notify=True)).props("disable")
+
+
+def build_ui() -> None:
+    _ensure_static_outputs_and_viewer_script()
+    ui.page_title(f"{APP_BRAND} Local v{APP_VERSION}")
+    state.ui_mode = DEFAULT_MODE
+    content_container: Any | None = None
+
+    def render_mode(mode: str) -> None:
+        selected = mode if mode in MODE_OPTIONS else DEFAULT_MODE
+        state.ui_mode = selected
+        if content_container is None:
+            return
+        content_container.clear()
+        with content_container:
+            if selected == MODE_3D:
+                _build_3d_placeholder_panel()
+            else:
+                _build_img_workflow()
+
+    with ui.header().classes("w-full items-center gap-3 no-wrap px-3 py-2"):
+        with ui.row().classes("items-center gap-2 no-wrap"):
+            ui.label(APP_BRAND).classes("text-xl font-bold")
+            ui.label(f"v{APP_VERSION}").classes("text-xs text-gray-200")
+        with ui.row().classes("items-center gap-1 no-wrap"):
+            ui.button("File", on_click=lambda: _placeholder_status("File")).props("flat dense")
+            ui.button("Edit", on_click=lambda: _placeholder_status("Edit")).props("flat dense")
+            ui.button("View", on_click=lambda: _placeholder_status("View")).props("flat dense")
+            ui.button("Undo", icon="undo").props("flat dense disable").tooltip("Undo history is planned for v0.2.")
+            ui.button("Redo", icon="redo").props("flat dense disable").tooltip("Redo history is planned for v0.2.")
+        ui.space()
+        ui.toggle(MODE_OPTIONS, value=DEFAULT_MODE, on_change=lambda e: render_mode(str(e.value))).props("dense unelevated toggle-color=primary").classes("font-bold min-w-[9rem]")
+
+    content_container = ui.column().classes("w-full p-3 gap-3")
+    render_mode(DEFAULT_MODE)
 
 
 def main() -> None:
