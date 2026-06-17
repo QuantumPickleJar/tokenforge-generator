@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
 import inspect
 import traceback
 
@@ -79,13 +80,14 @@ def _apply_preview_result(result: ThreeDPreviewResult) -> None:
     render_model_viewer(state.three_d_viewer_container, result.preview_glb_path)
 
 
-def refresh_3d_preview() -> None:
+async def refresh_3d_preview() -> None:
     if state.three_d_source_path is None:
         set_status("Upload an STL in 3D mode before refreshing the layer-color preview.", negative=True)
         return
 
+    set_status("Building 3D layer-color preview. The viewer will update when the GLB is ready.", notify=True)
     try:
-        result = build_layer_color_3d_preview(state.three_d_source_path, state.project)
+        result = await asyncio.to_thread(build_layer_color_3d_preview, state.three_d_source_path, state.project)
         _apply_preview_result(result)
         set_status(
             "Layer color preview updated — estimated from model Z-height and selected filament changes.",
@@ -124,4 +126,4 @@ async def handle_3d_upload(e: events.UploadEventArguments) -> None:
     if state.three_d_bounds_label:
         state.three_d_bounds_label.set_text("Loading STL bounds and layer-color preview...")
 
-    refresh_3d_preview()
+    await refresh_3d_preview()
