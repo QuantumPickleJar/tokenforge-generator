@@ -23,6 +23,7 @@ class AppState:
             enabled_palette_colors=[FilamentColor(c.name, c.hex, c.enabled) for c in self.preferences.palette],
             imported_fonts=self.preferences.imported_fonts,
         )
+        self.ui_mode: str = "IMG"
         self.source_path: Path | None = None
         self.source_image: Image.Image | None = None
         self.prepared_image: Image.Image | None = None
