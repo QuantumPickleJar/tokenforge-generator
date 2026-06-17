@@ -30,12 +30,22 @@ class AppState:
         self.package_paths: dict[str, Path] | None = None
         self.reduced_preview_path: Path | None = None
         self.stl_preview_path: Path | None = None
+        self.three_d_source_path: Path | None = None
+        self.three_d_preview_path: Path | None = None
+        self.three_d_model_name: str | None = None
+        self.three_d_bounds_summary: str | None = None
+        self.three_d_face_count: int | None = None
+        self.three_d_vertex_count: int | None = None
+        self.three_d_last_error: str | None = None
         self.crop_image_widget = None
         self.styled_preview_widget = None
         self.reduced_preview_widget = None
         self.layer_preview_widget = None
         self.layer_editor_container = None
         self.stl_viewer_container = None
+        self.three_d_viewer_container = None
+        self.three_d_model_label = None
+        self.three_d_bounds_label = None
         self.status = None
         self.is_generating = False
         self.dragging = False
@@ -80,6 +90,7 @@ def coerce_float(value: Any, fallback: float, minimum: float | None = None, maxi
 def mark_dirty() -> None:
     state.package_paths = None
     state.stl_preview_path = None
+    state.three_d_preview_path = None
     state.project.generated_layer_plan = None
 
 
