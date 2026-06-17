@@ -8,6 +8,7 @@ from .image_editor import reset_transform, rotate_transform_90
 from .models import FilamentColor
 from .stl_viewer import render_model_viewer
 from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
+from .tf_3d_handlers import handle_3d_upload, refresh_3d_preview
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_crop_preview, refresh_reduced_color_preview, refresh_visual_previews
@@ -19,13 +20,14 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
 
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.2.0"
 APP_BRAND = "Tokenforge"
 MODE_IMG = "IMG"
 MODE_3D = "3D"
 MODE_OPTIONS = [MODE_IMG, MODE_3D]
 DEFAULT_MODE = MODE_IMG
-THREE_D_PLACEHOLDER_TEXT = "3D import preview is planned for v0.2. STL/3MF layer-color preview will be available here."
+THREE_D_WORKFLOW_TEXT = "STL layer-color preview is available here. 3MF support is planned for a later v0.2 pass."
+THREE_D_PREVIEW_LABEL = "Layer color preview — estimated from model Z-height and selected filament changes."
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
 
@@ -144,31 +146,37 @@ def _build_style_panel() -> None:
     ui.label("Font import is intentionally deferred. v0.1 stores font metadata and safely falls back if missing.").classes("text-sm text-gray-600")
 
 
+def _build_palette_color_controls() -> None:
+    with ui.grid(columns=2).classes("w-full gap-2"):
+        for color in state.project.enabled_palette_colors:
+            with ui.row().classes("items-center no-wrap gap-2"):
+                ui.checkbox(color.name, value=color.enabled, on_change=lambda e, c=color: palette_changed(c, enabled=e.value)).classes("min-w-28")
+                ui.input("Hex", value=color.hex, on_change=lambda e, c=color: palette_changed(c, hex_value=e.value)).classes("w-28")
+
+
+def _build_add_color_row() -> None:
+    with ui.row().classes("items-end gap-2"):
+        new_name = ui.input("New color name", value="Accent").classes("w-40")
+        new_hex = ui.input("#hex", value="#ff00ff").classes("w-28")
+
+        def add_color() -> None:
+            state.project.enabled_palette_colors.append(FilamentColor(new_name.value, new_hex.value, True))
+            persist_preferences_from_ui()
+            mark_dirty()
+            refresh_layer_controls()
+            refresh_reduced_color_preview(False)
+            set_status("Color added. Refresh the page to see it in the simple palette list.")
+
+        ui.button("Add color", on_click=add_color).props("dense")
+
+
 def _build_palette_panel() -> None:
     ui.label("Filament palette and layer plan").classes("text-lg font-bold")
     with ui.card().classes("w-full gap-3"):
         ui.input("Project name", value=state.project.project_name, on_change=lambda e: (setattr(state.project, "project_name", safe_project_name(e.value)), mark_dirty(), refresh_reduced_color_preview(False))).classes("w-full")
         ui.label("Enable colors before generation. The layer rail below controls print order and color spans.").classes("text-sm text-gray-600")
-
-        with ui.grid(columns=2).classes("w-full gap-2"):
-            for color in state.project.enabled_palette_colors:
-                with ui.row().classes("items-center no-wrap gap-2"):
-                    ui.checkbox(color.name, value=color.enabled, on_change=lambda e, c=color: palette_changed(c, enabled=e.value)).classes("min-w-28")
-                    ui.input("Hex", value=color.hex, on_change=lambda e, c=color: palette_changed(c, hex_value=e.value)).classes("w-28")
-
-        with ui.row().classes("items-end gap-2"):
-            new_name = ui.input("New color name", value="Accent").classes("w-40")
-            new_hex = ui.input("#hex", value="#ff00ff").classes("w-28")
-
-            def add_color() -> None:
-                state.project.enabled_palette_colors.append(FilamentColor(new_name.value, new_hex.value, True))
-                persist_preferences_from_ui()
-                mark_dirty()
-                refresh_layer_controls()
-                refresh_reduced_color_preview(False)
-                set_status("Color added. Refresh the page to see it in the simple v0.1 palette list.")
-
-            ui.button("Add color", on_click=add_color).props("dense")
+        _build_palette_color_controls()
+        _build_add_color_row()
 
     state.layer_editor_container = ui.column().classes("w-full gap-2")
     refresh_layer_controls()
@@ -239,15 +247,36 @@ def _build_img_workflow() -> None:
         refresh_visual_previews()
 
 
-def _build_3d_placeholder_panel() -> None:
-    with ui.column().classes("w-full items-center justify-center min-h-[55vh] p-4"):
-        with ui.card().classes("w-full max-w-3xl gap-4 text-center"):
-            ui.label("3D mode").classes("text-2xl font-bold")
-            ui.label(THREE_D_PLACEHOLDER_TEXT).classes("text-base")
-            ui.label("Use the IMG toggle to return to the current image-driven workflow: upload image → crop → style → reduced-color preview → generate STL/package.").classes("text-sm text-gray-600")
-            with ui.row().classes("w-full justify-center gap-3"):
-                ui.button("Import STL/3MF", on_click=lambda: set_status("3D import is planned for v0.2 and is not enabled in v0.1.x.", notify=True)).props("disable")
-                ui.button("Layer-color 3D preview", on_click=lambda: set_status("STL/3MF layer-color preview is planned for v0.2.", notify=True)).props("disable")
+def _build_3d_workflow() -> None:
+    with ui.row().classes("w-full gap-4 items-start"):
+        with ui.column().classes("w-full lg:w-1/2 gap-3"):
+            with ui.card().classes("w-full gap-3"):
+                ui.label("3D model import").classes("text-lg font-bold")
+                ui.label(THREE_D_WORKFLOW_TEXT).classes("text-sm text-gray-600")
+                ui.upload(on_upload=handle_3d_upload, auto_upload=True, label="Upload STL model").props("accept=.stl,.STL,.3mf,.3MF").classes("w-full")
+                state.status = ui.label("Upload an STL to begin the 3D layer-color preview workflow.").classes("text-sm")
+                state.three_d_model_label = ui.label(f"Model: {state.three_d_model_name or 'none loaded'}").classes("text-sm font-bold")
+                state.three_d_bounds_label = ui.label(state.three_d_bounds_summary or "Bounds: no model loaded yet.").classes("text-sm text-gray-700")
+                with ui.row().classes("items-center gap-2"):
+                    ui.button("Refresh 3D layer preview", on_click=refresh_3d_preview).props("color=primary dense")
+                    ui.button("3MF support", on_click=lambda: set_status("3MF parsing is coming later in v0.2; upload STL for now.", notify=True)).props("dense flat")
+
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Filament colors used by 3D preview").classes("font-bold")
+                ui.label("These are the same local palette colors used in IMG mode. The rail below maps them to the imported model's Z height.").classes("text-sm text-gray-600")
+                _build_palette_color_controls()
+                _build_add_color_row()
+
+            state.layer_editor_container = ui.column().classes("w-full gap-2")
+            refresh_layer_controls()
+
+        with ui.column().classes("w-full lg:w-1/2 gap-3 lg:sticky top-20 self-start"):
+            with ui.card().classes("w-full gap-2"):
+                ui.label("Layer color preview").classes("text-lg font-bold")
+                ui.label(THREE_D_PREVIEW_LABEL).classes("text-sm text-gray-600")
+                ui.label("MVP accuracy: each triangle is colored by its face-centroid Z height. Triangles are not split at exact layer boundaries yet.").classes("text-xs text-gray-600")
+                state.three_d_viewer_container = ui.column().classes("w-full")
+                render_model_viewer(state.three_d_viewer_container, state.three_d_preview_path)
 
 
 def build_ui() -> None:
@@ -264,7 +293,7 @@ def build_ui() -> None:
         content_container.clear()
         with content_container:
             if selected == MODE_3D:
-                _build_3d_placeholder_panel()
+                _build_3d_workflow()
             else:
                 _build_img_workflow()
 
