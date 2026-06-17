@@ -20,13 +20,13 @@ def output_static_url(path: Path | str) -> str:
     return "/outputs/" + quote(str(rel).replace("\\", "/"))
 
 
-def render_model_viewer(container, glb_path: Path | str | None) -> None:
+def render_model_viewer(container, glb_path: Path | str | None, *, empty_message: str = "Generate a package to populate the 3D model viewer.") -> None:
     if container is None:
         return
     container.clear()
     with container:
         if glb_path is None:
-            ui.label("Generate a package to populate the 3D model viewer.").classes("text-sm text-gray-600")
+            ui.label(empty_message).classes("text-sm text-gray-600")
             return
 
         path = Path(glb_path)
