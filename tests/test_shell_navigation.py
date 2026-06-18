@@ -20,3 +20,13 @@ def test_3d_mode_is_placeholder_gated_for_v01x() -> None:
 
 def test_app_state_tracks_img_mode_by_default() -> None:
     assert state.ui_mode == "IMG"
+
+
+def test_img_workflow_uses_responsive_grid_instead_of_half_width_flex_row() -> None:
+    layout = shell.IMG_WORKFLOW_LAYOUT_CLASSES
+
+    assert "grid" in layout
+    assert "grid-cols-1" in layout
+    assert "lg:grid-cols-2" in layout
+    assert "lg:w-1/2" not in shell.IMG_WORKFLOW_EDITOR_CLASSES
+    assert "lg:w-1/2" not in shell.IMG_WORKFLOW_PREVIEW_CLASSES
