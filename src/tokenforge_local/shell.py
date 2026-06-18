@@ -19,13 +19,16 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
 
-APP_VERSION = "0.1.6"
+APP_VERSION = "0.1.7"
 APP_BRAND = "Tokenforge"
 MODE_IMG = "IMG"
 MODE_3D = "3D"
 MODE_OPTIONS = [MODE_IMG, MODE_3D]
 DEFAULT_MODE = MODE_IMG
 THREE_D_PLACEHOLDER_TEXT = "3D import preview is planned for v0.2. STL/3MF layer-color preview will be available here."
+IMG_WORKFLOW_LAYOUT_CLASSES = "w-full grid grid-cols-1 lg:grid-cols-2 gap-4 items-start"
+IMG_WORKFLOW_EDITOR_CLASSES = "w-full min-w-0 gap-3"
+IMG_WORKFLOW_PREVIEW_CLASSES = "w-full min-w-0 gap-3 lg:sticky top-20 self-start"
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
 
@@ -213,8 +216,8 @@ def _show_output_path() -> None:
 
 
 def _build_img_workflow() -> None:
-    with ui.row().classes("w-full gap-4 items-start"):
-        with ui.column().classes("w-full lg:w-1/2 gap-3"):
+    with ui.element("div").classes(IMG_WORKFLOW_LAYOUT_CLASSES):
+        with ui.column().classes(IMG_WORKFLOW_EDITOR_CLASSES):
             with ui.tabs().classes("w-full") as tabs:
                 prepare_tab = ui.tab("Prepare")
                 style_tab = ui.tab("Style")
@@ -231,7 +234,7 @@ def _build_img_workflow() -> None:
                 with ui.tab_panel(profile_tab).classes("gap-3"):
                     _build_profile_panel()
 
-        with ui.column().classes("w-full lg:w-1/2 gap-3 lg:sticky top-20 self-start"):
+        with ui.column().classes(IMG_WORKFLOW_PREVIEW_CLASSES):
             _build_preview_panel()
 
     refresh_crop_preview()
