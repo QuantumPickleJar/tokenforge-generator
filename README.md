@@ -1,8 +1,10 @@
 # Tokenforge Local
 
-`tokenforge-local` is a local-first Python/NiceGUI app for converting a user-provided image into a thin 2.5D embossed STL token for single-nozzle, manual-filament-swap 3D printing.
+`tokenforge-local` is a local-first Python/NiceGUI app for turning image art or STL geometry into manual-filament-swap 2.5D/3D preview workflows.
 
-The v0.1 target is a Magic-card-style token generator, not a general lithophane maker and not a slicer.
+The v0.1 line focuses on image-driven token art: upload image → crop → style → reduced-color filament preview → generate STL/package.
+
+The v0.2 feature branch begins the 3D workflow: upload STL → estimate model Z/layer bands → preview the imported model in browser with Tokenforge filament colors.
 
 ## What v0.1 does
 
@@ -17,27 +19,37 @@ The v0.1 target is a Magic-card-style token generator, not a general lithophane 
 - Assign enabled colors to Z/layer bands for manual filament changes.
 - Export a 2.5D STL and a ZIP print package.
 
-## What v0.1 intentionally does not do
+## What v0.2 starts
 
-- It does **not** slice models.
+- Keeps the existing IMG workflow as the default mode.
+- Adds a real `3D` mode behind the top `IMG | 3D` toggle.
+- Accepts uploaded `.stl` files as uncolored geometry.
+- Loads STL geometry with `trimesh` and reports model bounds/dimensions.
+- Applies Tokenforge palette/layer-band logic by model Z height.
+- Colors each triangle by its face-centroid Z height for the first MVP preview.
+- Exports a temporary `.glb` viewer artifact and displays it in the browser with orbit/zoom controls.
+- Shows a clear 3MF placeholder/error: 3MF support is planned for a later v0.2 pass.
+
+## What v0.2 intentionally does not do yet
+
+- It does **not** parse slicer-specific color painting from 3MF.
+- It does **not** split triangles at exact layer/color boundaries.
 - It does **not** generate G-code.
-- It does **not** implement 3MF export.
-- It does **not** implement Ollama or AI critique.
-- It does **not** download card art, fonts, sample images, or copyrighted assets.
-- It does **not** require Photoshop, GIMP, cloud APIs, paid AI credits, AMS, or dual extrusion.
+- It does **not** integrate with a slicer.
+- It does **not** provide slicer-grade print simulation.
 
 ## Requirements
 
 - Python 3.11+
 - A local browser
-- A slicer such as PrusaSlicer, Cura, OrcaSlicer, or similar for the final G-code handoff
+- A slicer such as PrusaSlicer, Cura, OrcaSlicer, or similar for final G-code handoff
 
 ## Setup
 
 ```bash
 git clone <your-repo-url> tokenforge-local
 cd tokenforge-local
-git checkout feat/v0.1
+git checkout v0.2
 python -m venv .venv
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
@@ -66,22 +78,23 @@ python -m tokenforge_local.app
 
 NiceGUI will start a local web app and open it in your browser.
 
-## Basic workflow
+## IMG workflow
 
-1. Upload your own image.
-2. Use the in-app crop preparation controls:
+1. Select `IMG` in the toolbar.
+2. Upload your own image.
+3. Use the in-app crop preparation controls:
    - pan X/Y
    - zoom/scale
    - rotate in 90-degree increments
    - reset transform
    - confirm crop
-3. Configure printer/profile preferences:
+4. Configure printer/profile preferences:
    - nozzle size
    - initial layer height
    - standard layer height
    - finished model thickness
    - minimum feature size
-4. Configure style options:
+5. Configure style options:
    - border enabled/disabled
    - border style
    - border thickness
@@ -89,16 +102,32 @@ NiceGUI will start a local web app and open it in your browser.
    - banner toggles
    - emboss/engrave toggle for title text
    - simple badge placeholder
-5. Enable/disable filament colors and edit hex values.
-6. Generate the STL and print package.
-7. Import the STL into your slicer.
-8. Add manual color changes or pauses at the Z heights listed in the swap plan.
-9. Preview in the slicer before printing.
-10. Export G-code from the slicer.
+6. Enable/disable filament colors and edit hex values.
+7. Generate the STL and print package.
+8. Import the STL into your slicer.
+9. Add manual color changes or pauses at the Z heights listed in the swap plan.
+10. Preview in the slicer before printing.
+11. Export G-code from the slicer.
+
+## 3D workflow MVP
+
+1. Select `3D` in the toolbar.
+2. Upload an STL file.
+3. Check the model name, bounds, dimensions, vertex count, and face count.
+4. Enable or edit Tokenforge filament colors.
+5. Use the layer rail to adjust color order and layer spans.
+6. Click **Refresh 3D layer preview**.
+7. Orbit/zoom the browser preview.
+
+The 3D preview is labeled:
+
+> Layer color preview — estimated from model Z-height and selected filament changes.
+
+For this MVP, each triangle is colored by its face centroid Z height. This is good enough for orientation and color-band planning, but it is not slicer-grade. A later pass can split triangles that cross color-change boundaries.
 
 ## Output package
 
-The generated ZIP package contains:
+The IMG-generated ZIP package contains:
 
 - `<project-name>.stl`
 - `<project-name>-preview.png`
@@ -108,6 +137,25 @@ The generated ZIP package contains:
 - `<project-name>.tokenforge.json`
 
 The package ZIP itself is written next to these files as `<project-name>-print-package.zip`. A ZIP cannot contain itself without recursive packaging, so it is not embedded inside itself.
+
+The 3D preview workflow writes temporary GLB artifacts under `outputs/3d-previews/` for browser display.
+
+## Test and smoke commands
+
+```bash
+python scripts/run_tests.py
+python scripts/run_preview_smoke.py
+python scripts/run_3d_smoke.py
+```
+
+Installed script equivalents:
+
+```bash
+tokenforge-preview-smoke
+tokenforge-3d-smoke
+```
+
+The 3D smoke runner creates a tiny STL fixture and a colored GLB preview under `outputs/test-runs/3d-smoke/`.
 
 ## Print notes
 
@@ -125,101 +173,3 @@ The print notes include:
 - slicer checklist
 
 The most important slicer warning is: **do not scale Z** after importing the STL.
-
-## Default Magic-card-style token profile
-
-- Width: `63.0 mm`
-- Height: `87.9 mm`
-- Corner radius: `2.5 mm`
-
-The height is intentionally 0.1 mm shorter than a typical 88 mm card height to leave practical room for print expansion and tolerance.
-
-## Preferences and project JSON
-
-Preferences are stored locally in:
-
-```text
-~/.tokenforge-local/preferences.json
-```
-
-Each generated project JSON stores:
-
-- source image reference
-- crop/transform settings
-- printer preferences
-- token dimensions
-- enabled palette colors
-- style/layout settings
-- text content
-- font selections
-- banner/border choices
-- generated layer plan metadata
-
-## Font architecture
-
-v0.1 does not include full font import. The data model already supports local imported font metadata so v0.2 can add:
-
-- `.ttf` and `.otf` import
-- user labels for imported font families
-- font previewing
-- removing imported fonts from preferences
-- project-specific font references
-- missing-font warnings and fallback behavior
-
-Font import should remain local-only. Users are responsible for font licensing.
-
-## Border/style architecture
-
-v0.1 implements these basic presets:
-
-- Thin line
-- Double line
-- Inset panel
-- Simple plaque frame
-- Wood frame
-- Riveted metal frame
-- Diamond plate frame
-- Stone frame
-- Marble frame
-
-The style preset registry already includes grouped future categories for:
-
-- Material Themes
-- Simple Frames
-- Fantasy / Decorative
-- Cultural / Regional Inspiration
-- Genre / Setting Themes
-
-Cultural/regional styles are intended as respectful motif-inspired options. The code must not auto-generate fake real-world script. Any real script/text style should require user-provided text.
-
-## Tests
-
-```bash
-pytest
-```
-
-Covered areas:
-
-- preference loading/saving
-- layer thickness calculation
-- palette nearest-color mapping
-- crop/transform metadata serialization
-- style preset serialization/deserialization
-- text layout configuration serialization
-- swap plan generation
-- ZIP package creation
-- STL export smoke test
-
-## Known limitations in v0.1
-
-- The mesh is a blocky 2.5D height-map STL, not a production-grade relief sculpt.
-- The browser crop UI uses sliders and preview regeneration, not a polished drag-handle canvas.
-- The generated STL can become heavy if the working resolution is increased too much.
-- Color mapping uses deterministic nearest RGB, not perceptual color matching.
-- Tiny-island repair is automatic only; no brush/merge/thicken tools yet.
-- The NiceGUI palette list is intentionally simple; after adding a new color, refreshing the page is the easiest way to see the new row.
-- Style presets are proof-of-pipeline implementations, not final art direction.
-
-## Recommended next development step
-
-The next best step is v0.1.1 polish: replace the slider-based crop UI with a draggable canvas-style crop editor and add a small layer/Z preview table before export. That improves usability without changing the core pipeline.
