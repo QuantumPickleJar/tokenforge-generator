@@ -66,6 +66,7 @@ def _target_for_upload(filename: str) -> Path:
 def _apply_preview_result(result: ThreeDPreviewResult) -> None:
     state.three_d_model_name = result.model_name
     state.three_d_bounds_summary = result.dimensions_summary
+    state.three_d_color_summary = result.color_source_note
     state.three_d_face_count = result.face_count
     state.three_d_vertex_count = result.vertex_count
     state.three_d_preview_path = result.preview_glb_path
@@ -77,7 +78,13 @@ def _apply_preview_result(result: ThreeDPreviewResult) -> None:
         state.three_d_bounds_label.set_text(
             f"{result.dimensions_summary} · {result.vertex_count:,} vertices · {result.face_count:,} faces"
         )
-    render_model_viewer(state.three_d_viewer_container, result.preview_glb_path)
+    if state.three_d_color_label:
+        state.three_d_color_label.set_text(result.color_source_note)
+    render_model_viewer(
+        state.three_d_viewer_container,
+        result.preview_glb_path,
+        empty_message="Upload an STL to see the layer-color preview here.",
+    )
 
 
 async def refresh_3d_preview() -> None:
@@ -85,6 +92,8 @@ async def refresh_3d_preview() -> None:
         set_status("Upload an STL in 3D mode before refreshing the layer-color preview.", negative=True)
         return
 
+    if state.three_d_color_label:
+        state.three_d_color_label.set_text("Colors: building preview from current palette and layer rail...")
     set_status("Building 3D layer-color preview. The viewer will update when the GLB is ready.", notify=True)
     try:
         result = await asyncio.to_thread(build_layer_color_3d_preview, state.three_d_source_path, state.project)
@@ -95,10 +104,17 @@ async def refresh_3d_preview() -> None:
         )
     except Exception as exc:
         state.three_d_last_error = str(exc)
+        state.three_d_color_summary = None
         traceback.print_exc()
         if state.three_d_bounds_label:
             state.three_d_bounds_label.set_text(f"3D preview failed: {exc}")
-        render_model_viewer(state.three_d_viewer_container, None)
+        if state.three_d_color_label:
+            state.three_d_color_label.set_text("Colors: preview unavailable until the STL loads successfully.")
+        render_model_viewer(
+            state.three_d_viewer_container,
+            None,
+            empty_message="Fix the STL upload problem, then refresh the 3D layer preview.",
+        )
         set_status(f"3D preview failed: {exc}", negative=True)
 
 
@@ -121,9 +137,12 @@ async def handle_3d_upload(e: events.UploadEventArguments) -> None:
     state.three_d_source_path = target
     state.three_d_model_name = target.name
     state.three_d_preview_path = None
+    state.three_d_color_summary = None
     if state.three_d_model_label:
         state.three_d_model_label.set_text(f"Model: {target.name}")
     if state.three_d_bounds_label:
         state.three_d_bounds_label.set_text("Loading STL bounds and layer-color preview...")
+    if state.three_d_color_label:
+        state.three_d_color_label.set_text("Colors: using current Tokenforge palette and layer rail.")
 
     await refresh_3d_preview()
