@@ -28,6 +28,10 @@ MODE_OPTIONS = [MODE_IMG, MODE_3D]
 DEFAULT_MODE = MODE_IMG
 THREE_D_WORKFLOW_TEXT = "STL layer-color preview is available here. 3MF support is planned for a later v0.2 pass."
 THREE_D_PREVIEW_LABEL = "Layer color preview — estimated from model Z-height and selected filament changes."
+THREE_D_EMPTY_VIEWER_MESSAGE = "Upload an STL to see the layer-color preview here."
+WORKSPACE_GRID_CLASSES = "w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.95fr)] gap-4 items-start"
+EDITOR_COLUMN_CLASSES = "w-full min-w-0 gap-3"
+PREVIEW_COLUMN_CLASSES = "w-full min-w-0 gap-3 xl:sticky top-20 self-start"
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
 
@@ -221,8 +225,8 @@ def _show_output_path() -> None:
 
 
 def _build_img_workflow() -> None:
-    with ui.row().classes("w-full gap-4 items-start"):
-        with ui.column().classes("w-full lg:w-1/2 gap-3"):
+    with ui.element("div").classes(WORKSPACE_GRID_CLASSES):
+        with ui.column().classes(EDITOR_COLUMN_CLASSES):
             with ui.tabs().classes("w-full") as tabs:
                 prepare_tab = ui.tab("Prepare")
                 style_tab = ui.tab("Style")
@@ -239,7 +243,7 @@ def _build_img_workflow() -> None:
                 with ui.tab_panel(profile_tab).classes("gap-3"):
                     _build_profile_panel()
 
-        with ui.column().classes("w-full lg:w-1/2 gap-3 lg:sticky top-20 self-start"):
+        with ui.column().classes(PREVIEW_COLUMN_CLASSES):
             _build_preview_panel()
 
     refresh_crop_preview()
@@ -248,8 +252,8 @@ def _build_img_workflow() -> None:
 
 
 def _build_3d_workflow() -> None:
-    with ui.row().classes("w-full gap-4 items-start"):
-        with ui.column().classes("w-full lg:w-1/2 gap-3"):
+    with ui.element("div").classes(WORKSPACE_GRID_CLASSES):
+        with ui.column().classes(EDITOR_COLUMN_CLASSES):
             with ui.card().classes("w-full gap-3"):
                 ui.label("3D model import").classes("text-lg font-bold")
                 ui.label(THREE_D_WORKFLOW_TEXT).classes("text-sm text-gray-600")
@@ -257,6 +261,7 @@ def _build_3d_workflow() -> None:
                 state.status = ui.label("Upload an STL to begin the 3D layer-color preview workflow.").classes("text-sm")
                 state.three_d_model_label = ui.label(f"Model: {state.three_d_model_name or 'none loaded'}").classes("text-sm font-bold")
                 state.three_d_bounds_label = ui.label(state.three_d_bounds_summary or "Bounds: no model loaded yet.").classes("text-sm text-gray-700")
+                state.three_d_color_label = ui.label(state.three_d_color_summary or "Colors: using current Tokenforge palette and layer rail.").classes("text-sm text-gray-700")
                 with ui.row().classes("items-center gap-2"):
                     ui.button("Refresh 3D layer preview", on_click=refresh_3d_preview).props("color=primary dense")
                     ui.button("3MF support", on_click=lambda: set_status("3MF parsing is coming later in v0.2; upload STL for now.", notify=True)).props("dense flat")
@@ -270,13 +275,13 @@ def _build_3d_workflow() -> None:
             state.layer_editor_container = ui.column().classes("w-full gap-2")
             refresh_layer_controls()
 
-        with ui.column().classes("w-full lg:w-1/2 gap-3 lg:sticky top-20 self-start"):
+        with ui.column().classes(PREVIEW_COLUMN_CLASSES):
             with ui.card().classes("w-full gap-2"):
                 ui.label("Layer color preview").classes("text-lg font-bold")
                 ui.label(THREE_D_PREVIEW_LABEL).classes("text-sm text-gray-600")
                 ui.label("MVP accuracy: each triangle is colored by its face-centroid Z height. Triangles are not split at exact layer boundaries yet.").classes("text-xs text-gray-600")
                 state.three_d_viewer_container = ui.column().classes("w-full")
-                render_model_viewer(state.three_d_viewer_container, state.three_d_preview_path)
+                render_model_viewer(state.three_d_viewer_container, state.three_d_preview_path, empty_message=THREE_D_EMPTY_VIEWER_MESSAGE)
 
 
 def build_ui() -> None:
