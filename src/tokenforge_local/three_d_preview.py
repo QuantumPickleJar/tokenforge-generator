@@ -54,6 +54,7 @@ class ThreeDPreviewResult:
     face_count: int
     layer_plan: LayerPlan
     colors: list[FilamentColor]
+    color_source_note: str
 
     @property
     def dimensions_summary(self) -> str:
@@ -106,24 +107,36 @@ def _model_bounds(mesh: trimesh.Trimesh) -> ModelBounds:
     )
 
 
-def _preview_colors_for_project(project: ProjectState) -> list[FilamentColor]:
+def _preview_colors_for_project(project: ProjectState) -> tuple[list[FilamentColor], str]:
+    enabled = enabled_colors(project.enabled_palette_colors)
+    had_editable_stops = bool(project.layer_color_stops)
+
+    if not enabled:
+        return (
+            [FilamentColor("Neutral Gray", "#888888", True)],
+            "No enabled filament colors were available; using a neutral gray fallback for preview.",
+        )
+
     try:
         colors = layer_colors_for_project(project)
     except Exception:
         colors = []
+
     if colors:
-        return colors
+        if len(colors) == 1:
+            return colors, f"Using one enabled filament color: {colors[0].name}."
+        if had_editable_stops:
+            return colors, f"Using {len(colors)} editable layer/color bands from the Tokenforge layer rail."
+        return colors, f"Using {len(colors)} enabled filament colors in default dark-to-light layer bands."
 
-    fallback = enabled_colors(project.enabled_palette_colors)
-    if fallback:
-        return [FilamentColor(color.name, color.hex, True) for color in fallback]
-    return [FilamentColor("Neutral Gray", "#888888", True)]
+    fallback = [FilamentColor(color.name, color.hex, True) for color in enabled]
+    return fallback, f"Using {len(fallback)} enabled palette colors; no custom layer stops were available."
 
 
-def preview_layer_plan_for_3d(project: ProjectState) -> tuple[LayerPlan, list[FilamentColor]]:
-    colors = _preview_colors_for_project(project)
+def preview_layer_plan_for_3d(project: ProjectState) -> tuple[LayerPlan, list[FilamentColor], str]:
+    colors, note = _preview_colors_for_project(project)
     custom_stops = project.layer_color_stops if len(colors) > 1 else None
-    return calculate_layer_plan(project.printer_preferences, colors, custom_stops=custom_stops), colors
+    return calculate_layer_plan(project.printer_preferences, colors, custom_stops=custom_stops), colors, note
 
 
 def _band_for_layer(plan: LayerPlan, layer_number: int) -> LayerBand:
@@ -177,7 +190,7 @@ def build_layer_color_3d_preview(
 
     mesh = _load_mesh(path)
     bounds = _model_bounds(mesh)
-    plan, colors = preview_layer_plan_for_3d(project)
+    plan, colors, color_source_note = preview_layer_plan_for_3d(project)
     face_colors = face_colors_from_z(mesh, bounds, plan)
 
     preview_mesh = _center_for_preview(mesh, bounds)
@@ -198,4 +211,5 @@ def build_layer_color_3d_preview(
         face_count=int(len(mesh.faces)),
         layer_plan=plan,
         colors=colors,
+        color_source_note=color_source_note,
     )
