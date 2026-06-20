@@ -34,6 +34,7 @@ class AppState:
         self.three_d_preview_path: Path | None = None
         self.three_d_model_name: str | None = None
         self.three_d_bounds_summary: str | None = None
+        self.three_d_color_summary: str | None = None
         self.three_d_face_count: int | None = None
         self.three_d_vertex_count: int | None = None
         self.three_d_last_error: str | None = None
@@ -46,6 +47,7 @@ class AppState:
         self.three_d_viewer_container = None
         self.three_d_model_label = None
         self.three_d_bounds_label = None
+        self.three_d_color_label = None
         self.status = None
         self.is_generating = False
         self.dragging = False
