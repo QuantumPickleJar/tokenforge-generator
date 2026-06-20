@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable
 from PIL import Image
 
+from .business_card import BusinessCardSettings
 from .models import FilamentColor, Preferences, ProjectState
 from .preferences import load_preferences
 
@@ -30,6 +31,7 @@ class AppState:
         self.package_paths: dict[str, Path] | None = None
         self.reduced_preview_path: Path | None = None
         self.stl_preview_path: Path | None = None
+
         self.three_d_source_path: Path | None = None
         self.three_d_preview_path: Path | None = None
         self.three_d_model_name: str | None = None
@@ -38,6 +40,16 @@ class AppState:
         self.three_d_face_count: int | None = None
         self.three_d_vertex_count: int | None = None
         self.three_d_last_error: str | None = None
+
+        self.card_settings = BusinessCardSettings()
+        self.card_source_path: Path | None = None
+        self.card_source_image: Image.Image | None = None
+        self.card_qr_content: str = ""
+        self.card_layout_mode: str = "Regenerated QR + simple relief blocks"
+        self.card_output_preview_path: Path | None = None
+        self.card_stl_path: Path | None = None
+        self.card_glb_path: Path | None = None
+
         self.crop_image_widget = None
         self.styled_preview_widget = None
         self.reduced_preview_widget = None
@@ -48,6 +60,17 @@ class AppState:
         self.three_d_model_label = None
         self.three_d_bounds_label = None
         self.three_d_color_label = None
+
+        self.card_source_preview_widget = None
+        self.card_qr_preview_widget = None
+        self.card_output_preview_widget = None
+        self.card_viewer_container = None
+        self.card_qr_label = None
+        self.card_qr_validation_label = None
+        self.card_feature_warning_label = None
+        self.card_output_label = None
+        self.card_qr_input = None
+
         self.status = None
         self.is_generating = False
         self.dragging = False
