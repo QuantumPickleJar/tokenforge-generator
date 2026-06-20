@@ -10,6 +10,7 @@ from .stl_viewer import render_model_viewer
 from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
 from .tf_3d_handlers import handle_3d_upload, refresh_3d_preview
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
+from .tf_card_handlers import detect_card_qr, generate_card_output, handle_card_upload, refresh_card_layout_preview, refresh_card_qr_preview
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_crop_preview, refresh_reduced_color_preview, refresh_visual_previews
 from .utils import safe_project_name
@@ -20,15 +21,18 @@ except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
 
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 APP_BRAND = "Tokenforge"
 MODE_IMG = "IMG"
+MODE_CARD = "CARD"
 MODE_3D = "3D"
-MODE_OPTIONS = [MODE_IMG, MODE_3D]
+MODE_OPTIONS = [MODE_IMG, MODE_CARD, MODE_3D]
 DEFAULT_MODE = MODE_IMG
 THREE_D_WORKFLOW_TEXT = "STL layer-color preview is available here. 3MF support is planned for a later v0.2 pass."
 THREE_D_PREVIEW_LABEL = "Layer color preview — estimated from model Z-height and selected filament changes."
 THREE_D_EMPTY_VIEWER_MESSAGE = "Upload an STL to see the layer-color preview here."
+CARD_WORKFLOW_TEXT = "Business Card / Flat Relief turns a card image plus confirmed QR content into a clean printable plaque-style STL."
+CARD_EDITOR_PLACEHOLDER = "Embedded 2D editor mount point: Fabric.js or Konva.js can later handle move/scale/rotate text, image, logo, and SVG objects."
 WORKSPACE_GRID_CLASSES = "w-full grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.95fr)] gap-4 items-start"
 EDITOR_COLUMN_CLASSES = "w-full min-w-0 gap-3"
 PREVIEW_COLUMN_CLASSES = "w-full min-w-0 gap-3 xl:sticky top-20 self-start"
@@ -169,6 +173,7 @@ def _build_add_color_row() -> None:
             mark_dirty()
             refresh_layer_controls()
             refresh_reduced_color_preview(False)
+            refresh_card_qr_preview()
             set_status("Color added. Refresh the page to see it in the simple palette list.")
 
         ui.button("Add color", on_click=add_color).props("dense")
@@ -222,6 +227,100 @@ def _show_output_path() -> None:
         set_status("No package has been generated yet.", negative=True)
         return
     ui.notify(f"ZIP path: {state.package_paths['zip']}")
+
+
+def _build_card_settings_panel() -> None:
+    settings = state.card_settings
+    with ui.card().classes("w-full gap-3"):
+        ui.label("Step 4 — Relief settings").classes("text-lg font-bold")
+        ui.label("These settings favor single-nozzle/manual filament-change prints: base card, raised QR/text band, optional higher accent later.").classes("text-sm text-gray-600")
+        with ui.grid(columns=2).classes("w-full gap-3"):
+            number("Card width mm", settings, "card_width_mm", minimum=30, step=0.5, refresh=refresh_card_qr_preview).classes("w-full")
+            number("Card height mm", settings, "card_height_mm", minimum=20, step=0.5, refresh=refresh_card_qr_preview).classes("w-full")
+            number("Base thickness mm", settings, "base_thickness_mm", minimum=0.2, step=0.05, refresh=refresh_card_qr_preview).classes("w-full")
+            number("Raised QR/text height mm", settings, "raised_feature_height_mm", minimum=0.05, step=0.05, refresh=refresh_card_qr_preview).classes("w-full")
+            number("Optional accent height mm", settings, "accent_height_mm", minimum=0.05, step=0.05, refresh=refresh_card_qr_preview).classes("w-full")
+            number("Corner radius mm", settings, "corner_radius_mm", minimum=0, step=0.25, refresh=refresh_card_qr_preview).classes("w-full")
+            number("QR physical size mm", settings, "qr_size_mm", minimum=8, step=0.5, refresh=refresh_card_qr_preview).classes("w-full")
+            number("QR quiet zone modules", settings, "qr_quiet_zone_modules", minimum=0, maximum=12, step=1, as_int=True, refresh=refresh_card_qr_preview).classes("w-full")
+        state.card_feature_warning_label = ui.label("QR feature warning: enter or detect QR content to estimate module size.").classes("text-sm text-orange-700")
+
+
+def _build_card_workflow() -> None:
+    with ui.element("div").classes(WORKSPACE_GRID_CLASSES):
+        with ui.column().classes(EDITOR_COLUMN_CLASSES):
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Business Card / Flat Relief").classes("text-xl font-bold")
+                ui.label(CARD_WORKFLOW_TEXT).classes("text-sm text-gray-600")
+
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Step 1 — Upload card image").classes("text-lg font-bold")
+                ui.upload(on_upload=handle_card_upload, auto_upload=True, label="Upload business card image").props("accept=image/png,image/jpeg,image/webp").classes("w-full")
+                ui.label("Boundary detection/rectify is staged for a later pass. Use a reasonably straight card image for this MVP.").classes("text-xs text-gray-600")
+                state.card_source_preview_widget = ui.image().classes("w-full border rounded max-h-[36vh]")
+
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Step 2 — Detect or enter QR").classes("text-lg font-bold")
+                state.card_qr_label = ui.label("QR detection: upload a card image or enter QR content manually.").classes("text-sm")
+                ui.button("Detect QR from uploaded image", on_click=detect_card_qr).props("dense color=primary")
+                state.card_qr_input = ui.textarea(
+                    "Confirmed/manual QR content or URL",
+                    value=state.card_qr_content,
+                    on_change=lambda e: (setattr(state, "card_qr_content", e.value or ""), refresh_card_qr_preview()),
+                ).classes("w-full")
+                with ui.row().classes("items-center gap-2"):
+                    ui.button("Generate / validate clean QR", on_click=refresh_card_qr_preview).props("dense")
+                    ui.button("Refresh card layout preview", on_click=refresh_card_layout_preview).props("dense")
+                state.card_qr_validation_label = ui.label("QR validation: waiting for content.").classes("text-sm text-gray-700")
+                state.card_qr_preview_widget = ui.image().classes("w-56 max-w-full border rounded")
+
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Step 3 — Layout extraction / cleanup").classes("text-lg font-bold")
+                ui.select(
+                    [
+                        "Source image as reference only",
+                        "Simple threshold/vector extraction",
+                        "Regenerated QR + simple relief blocks",
+                    ],
+                    label="Cleanup mode",
+                    value=state.card_layout_mode,
+                    on_change=lambda e: setattr(state, "card_layout_mode", str(e.value or "")),
+                ).classes("w-full")
+                ui.label("Current MVP generates a clean regenerated QR on a printable card base. Text/logo extraction hooks are intentionally placeholder-only.").classes("text-sm text-gray-600")
+                with ui.card().classes("w-full bg-grey-1"):
+                    ui.label(CARD_EDITOR_PLACEHOLDER).classes("text-xs text-gray-600")
+
+            _build_card_settings_panel()
+
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Layer plan for manual filament changes").classes("font-bold")
+                ui.label("Use the same Tokenforge palette/rail to plan base and raised QR color changes. Single-nozzle output is the primary target.").classes("text-sm text-gray-600")
+                _build_palette_color_controls()
+                _build_add_color_row()
+            state.layer_editor_container = ui.column().classes("w-full gap-2")
+            refresh_layer_controls()
+
+        with ui.column().classes(PREVIEW_COLUMN_CLASSES):
+            with ui.card().classes("w-full gap-3"):
+                ui.label("Step 5 — Preview and output").classes("text-lg font-bold")
+                state.status = ui.label("Upload a card or enter QR content to begin.").classes("text-sm")
+                with ui.row().classes("items-center gap-2"):
+                    ui.button("Generate card STL + browser preview", on_click=generate_card_output).props("color=primary dense")
+                    ui.button("Refresh 2D preview", on_click=refresh_card_layout_preview).props("dense")
+                state.card_output_label = ui.label("No business card output generated yet.").classes("text-sm text-gray-700")
+
+            with ui.card().classes("w-full gap-2"):
+                ui.label("Reduced-color 2D card preview").classes("font-bold")
+                ui.label("Clean regenerated QR on a plaque-style card base; source image is reference-only in this MVP.").classes("text-xs text-gray-600")
+                state.card_output_preview_widget = ui.image().classes("w-full border rounded")
+
+            with ui.card().classes("w-full gap-2"):
+                ui.label("Business card relief 3D preview").classes("font-bold")
+                ui.label("Generated as a GLB beside the STL so you can inspect it without downloading first.").classes("text-xs text-gray-600")
+                state.card_viewer_container = ui.column().classes("w-full")
+                render_model_viewer(state.card_viewer_container, state.card_glb_path, empty_message="Generate card relief output to populate the 3D preview.")
+
+    refresh_card_qr_preview()
 
 
 def _build_img_workflow() -> None:
@@ -299,6 +398,8 @@ def build_ui() -> None:
         with content_container:
             if selected == MODE_3D:
                 _build_3d_workflow()
+            elif selected == MODE_CARD:
+                _build_card_workflow()
             else:
                 _build_img_workflow()
 
@@ -313,7 +414,7 @@ def build_ui() -> None:
             ui.button("Undo", icon="undo").props("flat dense disable").tooltip("Undo history is planned for v0.2.")
             ui.button("Redo", icon="redo").props("flat dense disable").tooltip("Redo history is planned for v0.2.")
         ui.space()
-        ui.toggle(MODE_OPTIONS, value=DEFAULT_MODE, on_change=lambda e: render_mode(str(e.value))).props("dense unelevated toggle-color=primary").classes("font-bold min-w-[9rem]")
+        ui.toggle(MODE_OPTIONS, value=DEFAULT_MODE, on_change=lambda e: render_mode(str(e.value))).props("dense unelevated toggle-color=primary").classes("font-bold min-w-[13rem]")
 
     content_container = ui.column().classes("w-full p-3 gap-3")
     render_mode(DEFAULT_MODE)
