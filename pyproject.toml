@@ -26,6 +26,7 @@ dev = [
 [project.scripts]
 tokenforge-local = "tokenforge_local.app:main"
 tokenforge-preview-smoke = "tokenforge_local.preview_smoke:main"
+tokenforge-3d-smoke = "tokenforge_local.three_d_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
