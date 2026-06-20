@@ -1,10 +1,14 @@
 # Tokenforge Local
 
-`tokenforge-local` is a local-first Python/NiceGUI app for turning image art or STL geometry into manual-filament-swap 2.5D/3D preview workflows.
+`tokenforge-local` is a local-first Python/NiceGUI app for turning image art, business-card references, or STL geometry into manual-filament-swap 2.5D/3D preview workflows.
 
 The v0.1 line focuses on image-driven token art: upload image → crop → style → reduced-color filament preview → generate STL/package.
 
-The v0.2 feature branch begins the 3D workflow: upload STL → estimate model Z/layer bands → preview the imported model in browser with Tokenforge filament colors.
+The v0.2 feature branch adds mode-based workflows:
+
+- `IMG` — existing art-token workflow.
+- `CARD` — Business Card / Flat Relief wizard for QR-first printable plaques.
+- `3D` — STL layer-color preview by model Z height.
 
 ## What v0.1 does
 
@@ -22,13 +26,49 @@ The v0.2 feature branch begins the 3D workflow: upload STL → estimate model Z/
 ## What v0.2 starts
 
 - Keeps the existing IMG workflow as the default mode.
-- Adds a real `3D` mode behind the top `IMG | 3D` toggle.
+- Adds a `CARD` mode for business-card-style flat relief output.
+- Adds a real `3D` mode behind the top `IMG | CARD | 3D` toggle.
 - Accepts uploaded `.stl` files as uncolored geometry.
 - Loads STL geometry with `trimesh` and reports model bounds/dimensions.
 - Applies Tokenforge palette/layer-band logic by model Z height.
 - Colors each triangle by its face-centroid Z height for the first MVP preview.
-- Exports a temporary `.glb` viewer artifact and displays it in the browser with orbit/zoom controls.
+- Exports temporary `.glb` viewer artifacts and displays them in the browser with orbit/zoom controls.
 - Shows a clear 3MF placeholder/error: 3MF support is planned for a later v0.2 pass.
+
+## CARD workflow MVP
+
+The CARD workflow is intentionally not a grayscale-heightmap converter. It starts with business-card-friendly printable structure:
+
+- rectangular card/plaque base
+- regenerated QR code as crisp raised module geometry
+- 2D card preview
+- browser 3D GLB preview
+- STL output for printing
+- manual-filament-change-friendly base/raised feature design
+
+Current CARD steps:
+
+1. Select `CARD` in the toolbar.
+2. Upload a business card image as reference.
+3. Tokenforge attempts QR detection using OpenCV.
+4. Confirm the decoded QR value, or enter QR content/URL manually.
+5. Generate and validate a clean QR preview using `qrcode[pil]` with high error correction.
+6. Choose layout cleanup mode:
+   - source image as reference only
+   - simple threshold/vector extraction placeholder
+   - regenerated QR + simple relief blocks
+7. Set print-oriented dimensions:
+   - card width/height
+   - base thickness
+   - raised QR/text height
+   - optional accent height
+   - corner radius
+   - QR physical size
+   - QR quiet zone modules
+8. Review nozzle/min-feature warnings.
+9. Generate STL + GLB browser preview.
+
+The CARD MVP outputs a clean regenerated QR on a rectangular base. Future passes can add real text/logo vector extraction, rounded-base meshing, SVG imports, and a Fabric.js/Konva.js-style 2D editor.
 
 ## What v0.2 intentionally does not do yet
 
@@ -37,6 +77,8 @@ The v0.2 feature branch begins the 3D workflow: upload STL → estimate model Z/
 - It does **not** generate G-code.
 - It does **not** integrate with a slicer.
 - It does **not** provide slicer-grade print simulation.
+- It does **not** build a full Canva/Figma-like editor inside Tokenforge.
+- It does **not** perform robust OCR/text/logo vector extraction from business card images yet.
 
 ## Requirements
 
@@ -140,12 +182,15 @@ The package ZIP itself is written next to these files as `<project-name>-print-p
 
 The 3D preview workflow writes temporary GLB artifacts under `outputs/3d-previews/` for browser display.
 
+The CARD workflow writes STL/GLB/PNG artifacts under `outputs/business-cards/`.
+
 ## Test and smoke commands
 
 ```bash
 python scripts/run_tests.py
 python scripts/run_preview_smoke.py
 python scripts/run_3d_smoke.py
+python scripts/run_card_smoke.py
 ```
 
 Installed script equivalents:
@@ -153,9 +198,12 @@ Installed script equivalents:
 ```bash
 tokenforge-preview-smoke
 tokenforge-3d-smoke
+tokenforge-card-smoke
 ```
 
 The 3D smoke runner creates a tiny STL fixture and a colored GLB preview under `outputs/test-runs/3d-smoke/`.
+
+The CARD smoke runner creates a QR business-card STL, GLB, card preview PNG, and QR preview PNG under `outputs/test-runs/card-smoke/`.
 
 ## Print notes
 
