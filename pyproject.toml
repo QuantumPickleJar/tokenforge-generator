@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tokenforge-local"
-version = "0.2.0"
-description = "Local-first image/STL-to-layer-color 3D preview workflow for manual filament swaps."
+version = "0.2.1"
+description = "Local-first image/card/STL-to-layer-color 3D preview workflow for manual filament swaps."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -16,6 +16,7 @@ dependencies = [
     "numpy>=1.26",
     "opencv-python>=4.8",
     "trimesh>=4.0",
+    "qrcode[pil]>=7.4",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,7 @@ dev = [
 tokenforge-local = "tokenforge_local.app:main"
 tokenforge-preview-smoke = "tokenforge_local.preview_smoke:main"
 tokenforge-3d-smoke = "tokenforge_local.three_d_smoke:main"
+tokenforge-card-smoke = "tokenforge_local.business_card_smoke:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
