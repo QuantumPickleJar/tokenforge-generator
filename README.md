@@ -118,6 +118,14 @@ or:
 python -m tokenforge_local.app
 ```
 
+On Windows, after creating the `.venv` shown in Setup, the npm-compatible launch commands work too:
+
+```powershell
+npm run dev
+# or
+npm start
+```
+
 NiceGUI will start a local web app and open it in your browser.
 
 ## IMG workflow
@@ -242,6 +250,8 @@ python scripts/run_card_smoke.py
 For environments that start with npm, this Python project includes compatibility commands:
 
 ```bash
+npm run dev   # starts the local NiceGUI app
+npm start     # same launcher as npm run dev
 npm run build # compiles src/ as a fast syntax check
 npm test      # runs the Python pytest suite through .venv
 ```

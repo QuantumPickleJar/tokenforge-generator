@@ -4,6 +4,8 @@
   "version": "0.2.1",
   "description": "npm compatibility commands for the Python/NiceGUI Tokenforge application.",
   "scripts": {
+    "dev": ".venv\\Scripts\\python.exe -m tokenforge_local.app",
+    "start": ".venv\\Scripts\\python.exe -m tokenforge_local.app",
     "build": ".venv\\Scripts\\python.exe -m compileall -q src",
     "test": ".venv\\Scripts\\python.exe scripts\\run_tests.py"
   }
