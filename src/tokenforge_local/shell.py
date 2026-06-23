@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .app_state import mark_dirty, set_num, set_status, state
+from .handoff import build_print_request, decode_handoff_param, serialize_print_request
 from .image_editor import reset_transform, rotate_transform_90
 from .models import FilamentColor
 from .stl_viewer import render_model_viewer
@@ -11,13 +12,14 @@ from .style_presets import fallback_if_unimplemented, grouped_dropdown_options
 from .tf_3d_handlers import handle_3d_upload, refresh_3d_preview
 from .tf_app_handlers import confirm_crop, generate_package, handle_upload, palette_changed, persist_preferences_from_ui, style_changed
 from .tf_card_handlers import detect_card_qr, generate_card_output, handle_card_upload, refresh_card_layout_preview, refresh_card_qr_preview
+from .tf_handoff_ui import build_handoff_intake
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_crop_preview, refresh_reduced_color_preview, refresh_visual_previews
 from .tf_ai_handlers import accept_ai_candidate, check_ai_backend, generate_ai_candidate, reject_ai_candidate
 from .utils import safe_project_name
 
 try:
-    from nicegui import app, ui
+    from nicegui import app, context, ui
 except ModuleNotFoundError as exc:  # pragma: no cover
     raise SystemExit("NiceGUI is not installed. Run `pip install -e .` or `pip install -r requirements.txt` first.") from exc
 
@@ -39,6 +41,82 @@ EDITOR_COLUMN_CLASSES = "w-full min-w-0 gap-3"
 PREVIEW_COLUMN_CLASSES = "w-full min-w-0 gap-3 xl:sticky top-20 self-start"
 _OUTPUTS_STATIC_REGISTERED = False
 _MODEL_VIEWER_HEAD_ADDED = False
+
+
+def _load_handoff(encoded_handoff: str | None) -> None:
+    """Load one query-string handoff without ever blocking the regular app."""
+    result = decode_handoff_param(encoded_handoff)
+    state.handoff = result.handoff
+    state.handoff_error = result.error
+    state.print_request_json = ""
+    state.print_request_notes = result.handoff.print.notes if result.handoff else ""
+    if result.handoff is None:
+        return
+
+    generator = result.handoff.generator
+    suggested_name = generator.project_name or result.handoff.item.name
+    if suggested_name:
+        state.project.project_name = safe_project_name(suggested_name) or state.project.project_name
+    if result.handoff.print.nozzle_mm is not None:
+        state.project.printer_preferences.nozzle_size_mm = result.handoff.print.nozzle_mm
+    if result.handoff.print.layer_height_mm is not None:
+        state.project.printer_preferences.standard_layer_height_mm = result.handoff.print.layer_height_mm
+
+
+def _handoff_workflow_paths() -> dict[str, Path | None]:
+    return {
+        "img_source": state.source_path,
+        "img_stl_preview": state.stl_preview_path,
+        "three_d_source": state.three_d_source_path,
+        "three_d_preview": state.three_d_preview_path,
+        "card_source": state.card_source_path,
+        "card_stl": state.card_stl_path,
+        "card_glb": state.card_glb_path,
+        "card_preview": state.card_output_preview_path,
+    }
+
+
+def _prepare_print_request() -> None:
+    if state.handoff is None:
+        set_status("Open Tokenforge from a valid gallery handoff before preparing a Printdesk request.", negative=True)
+        return
+    request = build_print_request(
+        state.handoff,
+        state.project,
+        mode=state.ui_mode,
+        package_paths=state.package_paths,
+        workflow_paths=_handoff_workflow_paths(),
+        notes=state.print_request_notes,
+    )
+    state.print_request_json = serialize_print_request(request)
+    if state.print_request_preview_widget is not None:
+        state.print_request_preview_widget.set_value(state.print_request_json)
+    set_status("Printdesk request prepared. Download the JSON when you are ready.")
+
+
+def _download_print_request() -> None:
+    if state.handoff is None:
+        set_status("No gallery handoff is available for a Printdesk request.", negative=True)
+        return
+    if not state.print_request_json:
+        _prepare_print_request()
+    if not state.print_request_json:
+        return
+    filename = f"{safe_project_name(state.project.project_name) or 'tokenforge'}-printdesk-request.json"
+    context.client.download(state.print_request_json.encode("utf-8"), filename, "application/json")
+    set_status(f"Downloaded {filename}.")
+
+
+def _show_handoff_source_dialog(kind: str, url: str) -> None:
+    with ui.dialog() as dialog, ui.card().classes("w-[40rem] max-w-full gap-3"):
+        ui.label(f"Use gallery {kind}").classes("text-lg font-bold")
+        ui.label(
+            "For this local-first MVP, Tokenforge does not fetch remote gallery files automatically. "
+            "Copy this URL, download the file yourself, then upload it in the selected workflow."
+        ).classes("text-sm text-gray-700")
+        ui.input(f"Gallery {kind} URL", value=url).props("readonly").classes("w-full")
+        ui.button("Close", on_click=dialog.close).props("dense")
+    dialog.open()
 
 
 def _ensure_static_outputs_and_viewer_script() -> None:
@@ -443,15 +521,22 @@ def _build_3d_workflow() -> None:
                 render_model_viewer(state.three_d_viewer_container, state.three_d_preview_path, empty_message=THREE_D_EMPTY_VIEWER_MESSAGE)
 
 
-def build_ui() -> None:
+def build_ui(handoff: str | None = None) -> None:
     _ensure_static_outputs_and_viewer_script()
     ui.page_title(f"{APP_BRAND} Local v{APP_VERSION}")
-    state.ui_mode = DEFAULT_MODE
+    _load_handoff(handoff)
+    initial_mode = DEFAULT_MODE
+    if state.handoff and state.handoff.generator.mode in MODE_OPTIONS:
+        initial_mode = state.handoff.generator.mode
+    state.ui_mode = initial_mode
     content_container: Any | None = None
+    mode_toggle: Any | None = None
 
     def render_mode(mode: str) -> None:
         selected = mode if mode in MODE_OPTIONS else DEFAULT_MODE
         state.ui_mode = selected
+        if mode_toggle is not None:
+            mode_toggle.set_value(selected)
         if content_container is None:
             return
         content_container.clear()
@@ -477,10 +562,21 @@ def build_ui() -> None:
             ui.button("Undo", icon="undo").props("flat dense disable").tooltip("Undo history is planned for v0.2.")
             ui.button("Redo", icon="redo").props("flat dense disable").tooltip("Redo history is planned for v0.2.")
         ui.space()
-        ui.toggle(MODE_OPTIONS, value=DEFAULT_MODE, on_change=lambda e: render_mode(str(e.value))).props("dense unelevated toggle-color=primary").classes("font-bold min-w-[13rem]")
+        mode_toggle = ui.toggle(MODE_OPTIONS, value=initial_mode, on_change=lambda e: render_mode(str(e.value))).props("dense unelevated toggle-color=primary").classes("font-bold min-w-[13rem]")
 
     content_container = ui.column().classes("w-full p-3 gap-3")
-    render_mode(DEFAULT_MODE)
+    state.print_request_preview_widget = build_handoff_intake(
+        state.handoff,
+        state.handoff_error,
+        notes=state.print_request_notes,
+        request_json=state.print_request_json,
+        on_notes_change=lambda value: setattr(state, "print_request_notes", value),
+        on_prepare_request=_prepare_print_request,
+        on_download_request=_download_print_request,
+        on_use_image=lambda: (render_mode(MODE_IMG), _show_handoff_source_dialog("image", state.handoff.item.image_url)),
+        on_use_model=lambda: (render_mode(MODE_3D), _show_handoff_source_dialog("model", state.handoff.item.model_url)),
+    )
+    render_mode(initial_mode)
 
 
 def main() -> None:

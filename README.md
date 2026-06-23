@@ -184,6 +184,52 @@ The 3D preview workflow writes temporary GLB artifacts under `outputs/3d-preview
 
 The CARD workflow writes STL/GLB/PNG artifacts under `outputs/business-cards/`.
 
+## Portfolio gallery → Tokenforge handoff
+
+Portfolio/gallery pages can open Tokenforge with a URL-safe base64 JSON query parameter:
+
+```text
+http://localhost:8080/?handoff=<url-safe-base64-json>
+```
+
+The decoded JSON must use `"schema": "tokenforge.handoff.v1"` and has this shape:
+
+```json
+{
+  "schema": "tokenforge.handoff.v1",
+  "source": "portfolio-gallery",
+  "intent": "request-print",
+  "item": {
+    "id": "",
+    "name": "",
+    "description": "",
+    "galleryUrl": "",
+    "imageUrl": "",
+    "modelUrl": "",
+    "previewUrl": ""
+  },
+  "print": {
+    "category": "",
+    "material": "",
+    "nozzleMm": null,
+    "layerHeightMm": null,
+    "colors": [],
+    "estimatedGrams": null,
+    "estimatedTimeMinutes": null,
+    "notes": ""
+  },
+  "generator": {
+    "mode": "IMG",
+    "projectName": "",
+    "allowCustomization": true
+  }
+}
+```
+
+Tokenforge validates the schema and safely ignores invalid or missing handoffs; normal workflows remain available. A valid handoff preselects a supported mode (`IMG`, `CARD`, or `3D`), pre-fills the project name and supplied nozzle/layer height, and shows the gallery item, links, and print notes. Gallery image/model URLs are shown in copyable fields. The first MVP does not fetch them remotely: download the file yourself and upload it into Tokenforge.
+
+Use **Prepare print request** to create a `printdesk.request.v1` JSON document, then **Download print request JSON**. The request contains the original handoff, current editable Tokenforge project metadata/settings, available generated package/workflow paths, and the Printdesk notes. It is a local handoff artifact only; Printdesk does not need to be installed or running.
+
 ## Test and smoke commands
 
 ```bash
@@ -191,6 +237,13 @@ python scripts/run_tests.py
 python scripts/run_preview_smoke.py
 python scripts/run_3d_smoke.py
 python scripts/run_card_smoke.py
+```
+
+For environments that start with npm, this Python project includes compatibility commands:
+
+```bash
+npm run build # compiles src/ as a fast syntax check
+npm test      # runs the Python pytest suite through .venv
 ```
 
 Installed script equivalents:

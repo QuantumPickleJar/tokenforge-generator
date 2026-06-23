@@ -1,0 +1,10 @@
+{
+  "name": "tokenforge-generator",
+  "private": true,
+  "version": "0.2.1",
+  "description": "npm compatibility commands for the Python/NiceGUI Tokenforge application.",
+  "scripts": {
+    "build": ".venv\\Scripts\\python.exe -m compileall -q src",
+    "test": ".venv\\Scripts\\python.exe scripts\\run_tests.py"
+  }
+}

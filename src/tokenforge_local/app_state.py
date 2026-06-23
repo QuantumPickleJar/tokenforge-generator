@@ -54,6 +54,15 @@ class AppState:
         self.reduced_preview_path: Path | None = None
         self.stl_preview_path: Path | None = None
 
+        # A validated portfolio-gallery handoff is intentionally kept separate
+        # from the editable project settings. The handoff remains the immutable
+        # source record while users can customize Tokenforge settings freely.
+        self.handoff: Any | None = None
+        self.handoff_error: str | None = None
+        self.print_request_notes: str = ""
+        self.print_request_json: str = ""
+        self.print_request_preview_widget = None
+
         self.three_d_source_path: Path | None = None
         self.three_d_preview_path: Path | None = None
         self.three_d_model_name: str | None = None
