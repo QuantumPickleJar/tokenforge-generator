@@ -28,6 +28,28 @@ class AppState:
         self.source_path: Path | None = None
         self.source_image: Image.Image | None = None
         self.prepared_image: Image.Image | None = None
+        # Optional local AI editing session. These are deliberately separate from
+        # the normal IMG state until the user explicitly accepts a candidate.
+        self.ai_enabled: bool = False
+        self.ai_backend: str = "comfyui"
+        self.ai_endpoint: str = "http://127.0.0.1:8188"
+        self.ai_workflow_path: str = ""
+        self.ai_status: str = "AI Assist is disabled."
+        self.ai_last_error: str | None = None
+        self.ai_job_running: bool = False
+        self.ai_original_image: Image.Image | None = None
+        self.ai_original_path: Path | None = None
+        self.ai_candidate_image: Image.Image | None = None
+        self.ai_candidate_path: Path | None = None
+        self.ai_previous_candidate_image: Image.Image | None = None
+        self.ai_prompt: str = ""
+        self.ai_negative_prompt: str = ""
+        self.ai_preset: str = "Cleanup"
+        self.ai_prompt_history: list[str] = []
+        self.ai_candidate_history: list[Path] = []
+        self.ai_iteration_source: str = "current"
+        self.ai_protect_text_qr: bool = True
+        self.ai_protected_overlay: Image.Image | None = None
         self.package_paths: dict[str, Path] | None = None
         self.reduced_preview_path: Path | None = None
         self.stl_preview_path: Path | None = None
@@ -70,6 +92,9 @@ class AppState:
         self.card_feature_warning_label = None
         self.card_output_label = None
         self.card_qr_input = None
+        self.ai_status_label = None
+        self.ai_candidate_preview_widget = None
+        self.ai_entry_button = None
 
         self.status = None
         self.is_generating = False

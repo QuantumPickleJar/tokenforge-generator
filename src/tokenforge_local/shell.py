@@ -13,6 +13,7 @@ from .tf_app_handlers import confirm_crop, generate_package, handle_upload, pale
 from .tf_card_handlers import detect_card_qr, generate_card_output, handle_card_upload, refresh_card_layout_preview, refresh_card_qr_preview
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import handle_crop_mouse, refresh_after_crop_transform_change, refresh_crop_preview, refresh_reduced_color_preview, refresh_visual_previews
+from .tf_ai_handlers import accept_ai_candidate, check_ai_backend, generate_ai_candidate, reject_ai_candidate
 from .utils import safe_project_name
 
 try:
@@ -63,6 +64,62 @@ def _placeholder_status(label: str) -> None:
     set_status(f"{label} menu is reserved for v0.2 workflow actions.", notify=True)
 
 
+def _set_ai_enabled(value: Any) -> None:
+    state.ai_enabled = bool(value)
+    state.ai_status = "AI Assist is ready for local ComfyUI." if state.ai_enabled else "AI Assist is disabled."
+    if state.ai_entry_button is not None:
+        state.ai_entry_button.set_visibility(state.ai_enabled)
+
+
+def _show_ai_settings_dialog() -> None:
+    with ui.dialog() as dialog, ui.card().classes("w-[34rem] max-w-full gap-3"):
+        ui.label("AI Backend Settings").classes("text-lg font-bold")
+        ui.label("Tokenforge only talks to a separately running local ComfyUI server; it never loads AI models itself.").classes("text-sm text-gray-600")
+        ui.input("ComfyUI endpoint", value=state.ai_endpoint, on_change=lambda e: setattr(state, "ai_endpoint", str(e.value or "").rstrip("/"))).classes("w-full")
+        ui.input("Workflow JSON template path", value=state.ai_workflow_path, on_change=lambda e: setattr(state, "ai_workflow_path", str(e.value or ""))).classes("w-full")
+        ui.label("Use {{input_image}}, {{prompt}}, {{negative_prompt}}, {{preset}}, and optionally {{mask_image}} in your API-format ComfyUI workflow JSON.").classes("text-xs text-gray-600")
+        status = ui.label(state.ai_status).classes("text-sm")
+
+        async def test() -> None:
+            await check_ai_backend()
+            status.set_text(state.ai_status)
+
+        with ui.row().classes("justify-end w-full gap-2"):
+            ui.button("Test connection", on_click=test).props("dense")
+            ui.button("Close", on_click=dialog.close).props("dense")
+    dialog.open()
+
+
+def _show_ai_edit_dialog() -> None:
+    with ui.dialog() as dialog, ui.card().classes("w-[48rem] max-w-full gap-3"):
+        ui.label("✨ AI Edit (local ComfyUI)").classes("text-xl font-bold")
+        ui.label("Candidates are previews only. Accept commits one into the IMG workflow; Reject leaves the working image untouched.").classes("text-sm text-gray-600")
+        ui.input("Edit prompt", value=state.ai_prompt, on_change=lambda e: setattr(state, "ai_prompt", str(e.value or ""))).classes("w-full")
+        ui.input("Negative prompt", value=state.ai_negative_prompt, on_change=lambda e: setattr(state, "ai_negative_prompt", str(e.value or ""))).classes("w-full")
+        with ui.grid(columns=2).classes("w-full gap-3"):
+            ui.select(["Cleanup", "Background cleanup", "Contrast/detail enhancement", "Inpaint/region edit (workflow placeholder)"], label="Preset", value=state.ai_preset, on_change=lambda e: setattr(state, "ai_preset", str(e.value or "Cleanup"))).classes("w-full")
+            ui.select({"current": "Iterate from current image", "candidate": "Iterate from latest candidate"}, label="Iteration source", value=state.ai_iteration_source, on_change=lambda e: setattr(state, "ai_iteration_source", str(e.value or "current"))).classes("w-full")
+        ui.checkbox("Protect text / QR", value=state.ai_protect_text_qr, on_change=lambda e: setattr(state, "ai_protect_text_qr", bool(e.value)))
+        ui.label("IMG mode has no deterministic overlay by default. CARD can later supply text/QR layers, which Tokenforge will composite over the AI base.").classes("text-xs text-gray-600")
+        state.ai_status_label = ui.label(state.ai_status).classes("text-sm")
+        state.ai_candidate_preview_widget = ui.image().classes("w-full border rounded max-h-[45vh]")
+        if state.ai_candidate_image is not None:
+            from .utils import image_to_data_url
+            state.ai_candidate_preview_widget.set_source(image_to_data_url(state.ai_candidate_image))
+
+        async def generate() -> None:
+            await generate_ai_candidate()
+
+        with ui.row().classes("items-center gap-2 flex-wrap"):
+            ui.button("Generate / Iterate", on_click=generate).props("color=primary")
+            ui.button("Test backend", on_click=check_ai_backend).props("dense")
+            ui.button("Accept changes", on_click=accept_ai_candidate).props("color=positive dense")
+            ui.button("Reject changes", on_click=reject_ai_candidate).props("color=negative dense")
+            ui.button("Backend settings", on_click=_show_ai_settings_dialog).props("flat dense")
+            ui.button("Close", on_click=dialog.close).props("flat dense")
+    dialog.open()
+
+
 def number(
     label: str,
     target: Any,
@@ -88,6 +145,8 @@ def _build_prepare_panel() -> None:
     ui.label("Upload and crop").classes("text-lg font-bold")
     with ui.card().classes("w-full gap-3"):
         ui.upload(on_upload=handle_upload, auto_upload=True, label="Upload token art").props("accept=image/*").classes("w-full")
+        state.ai_entry_button = ui.button("✨ AI Edit", on_click=_show_ai_edit_dialog).props("dense color=secondary")
+        state.ai_entry_button.set_visibility(state.ai_enabled)
         state.crop_image_widget = ui.interactive_image(
             size=(state.project.crop_transform.output_width_px, state.project.crop_transform.output_height_px),
             on_mouse=handle_crop_mouse,
@@ -252,6 +311,7 @@ def _build_card_workflow() -> None:
             with ui.card().classes("w-full gap-3"):
                 ui.label("Business Card / Flat Relief").classes("text-xl font-bold")
                 ui.label(CARD_WORKFLOW_TEXT).classes("text-sm text-gray-600")
+                ui.label("AI editing is reserved for non-critical background/art cleanup. Deterministic Tokenforge QR and text layers remain the source of truth.").classes("text-xs text-gray-600")
 
             with ui.card().classes("w-full gap-3"):
                 ui.label("Step 1 — Upload card image").classes("text-lg font-bold")
@@ -410,7 +470,10 @@ def build_ui() -> None:
         with ui.row().classes("items-center gap-1 no-wrap"):
             ui.button("File", on_click=lambda: _placeholder_status("File")).props("flat dense")
             ui.button("Edit", on_click=lambda: _placeholder_status("Edit")).props("flat dense")
-            ui.button("View", on_click=lambda: _placeholder_status("View")).props("flat dense")
+            with ui.button("View").props("flat dense"):
+                with ui.menu().classes("p-2 gap-2"):
+                    ui.checkbox("Enable AI Assist", value=state.ai_enabled, on_change=lambda e: _set_ai_enabled(e.value))
+                    ui.button("AI Backend Settings", on_click=_show_ai_settings_dialog).props("flat dense")
             ui.button("Undo", icon="undo").props("flat dense disable").tooltip("Undo history is planned for v0.2.")
             ui.button("Redo", icon="redo").props("flat dense disable").tooltip("Redo history is planned for v0.2.")
         ui.space()

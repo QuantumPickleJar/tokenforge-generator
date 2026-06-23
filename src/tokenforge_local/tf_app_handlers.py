@@ -19,6 +19,7 @@ from .preferences import save_preferences
 from .stl_viewer import render_model_viewer
 from .tf_layer_ui import refresh_layer_controls
 from .tf_preview_helpers import refresh_crop_preview, refresh_reduced_color_preview, refresh_styled_preview, refresh_visual_previews
+from .tf_ai_handlers import reset_ai_session_for_upload
 from .utils import image_to_data_url, safe_project_name
 
 try:
@@ -82,6 +83,7 @@ async def handle_upload(e: events.UploadEventArguments) -> None:
     state.reduced_preview_path = None
     state.stl_preview_path = None
     state.is_generating = False
+    reset_ai_session_for_upload()
     mark_dirty()
     for widget in (state.styled_preview_widget, state.reduced_preview_widget, state.layer_preview_widget, state.stl_viewer_container):
         clear_widget(widget)
